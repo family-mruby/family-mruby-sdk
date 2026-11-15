@@ -91,6 +91,7 @@ The SDK also ships TinyGo's settings for a Family mruby app as a target file,
 
 ```
 cp "$(go list -m -f '{{.Dir}}' github.com/family-mruby/family-mruby-sdk/tinygo)/fmrb.json" .
+chmod u+w fmrb.json   # copied read-only from the module cache; needed only if you edit it
 ```
 
 It is four lines: the `wasm-unknown` target (no WASI), the conservative GC

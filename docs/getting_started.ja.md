@@ -78,6 +78,7 @@ SDK には、Family mruby のアプリを作るための TinyGo の設定がタ�
 
 ```
 cp "$(go list -m -f '{{.Dir}}' github.com/family-mruby/family-mruby-sdk/tinygo)/fmrb.json" .
+chmod u+w fmrb.json   # copied read-only from the module cache; needed only if you edit it
 ```
 
 中身は数行で、`wasm-unknown` のターゲット (WASI なし)、conservative の GC (メモリを解放する)、デバッグ情報なし。

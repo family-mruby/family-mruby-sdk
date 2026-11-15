@@ -32,6 +32,7 @@ mkdir hello && cd hello
 go mod init example.com/hello
 go get github.com/family-mruby/family-mruby-sdk/tinygo
 cp "$(go list -m -f '{{.Dir}}' github.com/family-mruby/family-mruby-sdk/tinygo)/fmrb.json" .
+chmod u+w fmrb.json   # copied read-only from the module cache; needed only if you edit it
 # main.go と hello.app.toml を書く (入門ガイドの 4 章と 5 章)
 tinygo build -target=fmrb.json -o hello.app.wasm .
 ```
