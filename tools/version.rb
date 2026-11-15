@@ -8,7 +8,9 @@
 #   ruby tools/version.rb --base v0.1.0    # against that tag
 #   ruby tools/version.rb --base old.json --from 0.1.0
 #                                          # against a boundary.json of 0.1.0
-#   ruby tools/version.rb --write          # also write VERSION and regenerate
+#   ruby tools/version.rb --write          # also write VERSION (and the version in
+#                                          # rust/Cargo.toml and zig/build.zig.zon)
+#                                          # and regenerate
 #
 # Breaking: something an app built before may use changed or went away -- a
 #   function removed or its parameters or result changed (C types, not only
@@ -150,6 +152,7 @@ if base_version
   puts "#{level}: the next version is #{nxt} (VERSION is #{current})"
   if write && nxt != current
     File.write(Boundary::VERSION_FILE, "#{nxt}\n")
+    Boundary.write_package_versions(nxt)
     system(RbConfig.ruby, File.join(__dir__, 'gen_bindings.rb')) or abort 'gen_bindings failed'
   end
 else

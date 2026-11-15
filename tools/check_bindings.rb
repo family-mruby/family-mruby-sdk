@@ -69,6 +69,15 @@ errors << 'c/fmrb_boundary.h: functions differ from boundary.json' if c_funcs !=
 errors << 'c/fmrb_boundary.h: hooks differ from boundary.json' if c_hooks != Boundary.hook_sigs(manifest)
 puts "c/fmrb_boundary.h: #{c_funcs.size} functions, #{c_hooks.size - 1} hooks"
 
+# ---- 2a. the language packages carry VERSION (tools/version.rb --write sets them)
+Boundary::PACKAGE_VERSIONS.each do |path, re|
+  full = File.join(Boundary::ROOT, path)
+  next unless File.exist?(full)
+
+  v = File.read(full)[re, 1]
+  errors << "#{path}: version #{v.inspect}, VERSION #{Boundary.version}" if v != Boundary.version
+end
+
 # ---- 2b. the generated declarations of the other languages, read back
 WASM_OF_LANG = {
   # a language's type spelling => wasm type (pointers are i32 on wasm32)

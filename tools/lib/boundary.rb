@@ -28,7 +28,25 @@ module Boundary
     'zig/raw.zig.erb' => 'zig/src/raw.zig'
   }.freeze
 
+  # The package files that carry the SDK version, and where in them.
+  PACKAGE_VERSIONS = {
+    'rust/Cargo.toml' => /\A(?:.*\n)*?version = "([^"]*)"/,
+    'zig/build.zig.zon' => /^\s*\.version = "([^"]*)"/
+  }.freeze
+
   module_function
+
+  # Writes VERSION into the package files (PACKAGE_VERSIONS).
+  def write_package_versions(ver)
+    PACKAGE_VERSIONS.each do |path, re|
+      full = File.join(ROOT, path)
+      next unless File.exist?(full)
+
+      text = File.read(full)
+      m = re.match(text) or next
+      File.write(full, text[0...m.begin(1)] + ver + text[m.end(1)..])
+    end
+  end
 
   def load(path = MANIFEST) = JSON.parse(File.read(path))
 
