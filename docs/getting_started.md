@@ -296,7 +296,7 @@ The keys the firmware reads (fmruby-core's app spawner and launcher):
 | `task_stack_kb` | the app task's C stack in KB (wasm apps get 24 KB by default) | |
 | `icon` | the launcher icon, a path without the leading `/` (e.g. `"app/mine/hello.icon"`) | a letter `W` |
 | `launcher_visible` | `false`: run by path only, not listed in the launcher | listed |
-| `sdk_version` | the SDK version the app was built with; the build script writes it. The firmware names it when it refuses an app that imports a function it does not have. While the SDK is 0.x, a change that breaks older apps bumps the middle number (0.1 -> 0.2) and an addition the last; from 1.0.0 on, the first and the middle (README, Versions) | none |
+| `sdk_version` | the SDK version the app was built with; the build script writes it. The firmware does not compare it: it refuses an app that imports a function the firmware does not have, and names this version in the message (section 8) | none |
 
 - The **category** is the directory under `/app` (`/app/tinygo/`,
   `/app/mine/`, ...); any directory works. The launcher lists the apps of all
@@ -592,7 +592,7 @@ it a larger pool where the device has one.
 - Rust and Zig: the hand-written layers wrap the same common part as TinyGo;
   neither uses an allocator (strings come back into fixed buffers). The
   Rust crate and the Zig package are not published to crates.io or as a
-  release archive yet (README, Distribution).
+  release archive yet ([maintaining.md](maintaining.md), Distribution).
 - wasm apps do not run on ESP32-S3 boards (section 1).
 - The development remote control has no authentication, and release builds
   do not have it yet (section 7 b).
