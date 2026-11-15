@@ -3,7 +3,9 @@
 [Japanese](getting_started.ja.md)
 
 This guide takes you from an empty machine to a TinyGo app running on Family
-mruby: first on the Linux simulation, then on an ESP32-P4 board over WiFi.
+mruby: on the Linux simulation, on an ESP32-P4 board over WiFi, and in the
+browser build on the web. A C app takes the same steps with its own build
+script (section 6).
 The app is `tinygo/examples/hello` in this repository; you can follow the
 steps with your own name instead of `hello`.
 
@@ -23,10 +25,13 @@ What the app may call (drawing, the app's own information, sound, files,
 the log) is the boundary between the app and the firmware. It is defined once,
 in the firmware's type definitions (`sig/*.rbs` in fmruby-core), and the same
 definitions give Ruby, Lua and MicroPython their functions. For C the
-generator writes a header, `sdk/c/fmrb_boundary.h` in fmruby-core: it is the
-ABI (function names, parameters, the event record, the hooks). The TinyGo
-package `tinygo/fmrb` is written by hand to match it, and
-`tools/check_bindings.rb` checks that it does.
+generator writes a header, `c/fmrb_boundary.h` here: it is the ABI (function
+names, parameters, the event record, the hooks). The generator also writes
+the boundary as data (`boundary/boundary.json`), and this SDK generates the
+TinyGo package `tinygo/fmrb/raw` from it: every function, record and choice.
+The package `tinygo/fmrb` is the hand-written layer on top (the hooks and Go
+shapes for the common functions); `tools/check_bindings.rb` checks that the
+generated files match the boundary.
 
 Where wasm apps run today:
 
@@ -35,7 +40,7 @@ Where wasm apps run today:
 | ESP32-P4 boards (Modern, e.g. M5Stack Tab5) | yes |
 | Linux simulation (the docker sim) | yes |
 | ESP32-S3 (Retro) | no: the launch is refused with `wasm apps are not in this build` |
-| Native Linux build, browser build | yes, when built from the current fmruby-core (the public browser build does not have it yet) |
+| Native Linux build, browser build | yes (the public browser build has `TinyGo bounce` and `TinyGo hello`; see 7 c) |
 
 ## 2. Prerequisites
 
@@ -43,6 +48,9 @@ Where wasm apps run today:
   TinyGo 0.44.0 and Go 1.26.11. Install both from their release archives
   (<https://tinygo.org/getting-started/install/> and <https://go.dev/dl/>).
 - **Ruby** (any recent 3.x) for the build and check scripts.
+- For C apps: **Zig** (its `zig cc`; checked with Zig 0.17.1), unpacked as
+  `~/toolchains/zig-<version>/` (or `ZIG=` the binary), or clang with
+  wasm-ld (`CC=clang`). No libc is needed.
 - **git**.
 - For the simulation: a Family mruby development tree (the `family-mruby`
   repository with `fmruby-core` and `fmruby-graphics-audio` fetched into it)
@@ -78,9 +86,12 @@ cd family-mruby-sdk
 | Path | What it is |
 |---|---|
 | `tinygo/fmrb/` | the TinyGo package: hooks, `Window`, `App`, sound, files, log |
-| `tinygo/examples/` | sample apps (`hello`, `bounce`); each directory is one app, its `main.go` and `.app.toml` |
-| `tinygo/build.rb` | builds one example into `<name>.app.wasm` |
-| `tools/check_bindings.rb` | checks the bindings and an app against the C header |
+| `tinygo/fmrb/raw/` | every boundary function, record and choice (generated) |
+| `tinygo/examples/` | sample apps (`hello`, `tour`, `bounce`); each directory is one app, its `main.go` and `.app.toml` |
+| `tinygo/build.rb` | builds one example into `<name>.app.wasm` and its `.app.toml` |
+| `c/` | the C headers (`fmrb_boundary.h`, `fmrb_sdk_version.h`), `build.rb` and `examples/tour` |
+| `tools/check_bindings.rb` | checks the generated files and an app's imports against the boundary |
+| `docs/tour.md` | the `tour` sample's specification (the same app in every language) |
 
 ## 4. The shape of an app
 
@@ -101,8 +112,8 @@ type hello struct {
 }
 
 func (h *hello) OnCreate() {
-	h.bg = fmrb.RGB(0, 0, 128) // dark blue; RGB(0, 0, 64) would be 0x01, the transparent key
-	h.fg = fmrb.RGB(255, 255, 255)
+	h.bg = fmrb.RGB(255, 255, 255) // white paper (never 0x01: the transparent key)
+	h.fg = fmrb.RGB(0, 0, 0)
 	h.key = "-"
 	fmrb.LogInfo("hello: started")
 }
@@ -143,6 +154,13 @@ func main() {}
 ```
 
 `main` stays empty: the firmware calls the hooks, there is no loop of yours.
+
+`tinygo/examples/tour` goes further: shapes, Japanese text, a picture, sound,
+files, clocks and the app's information over five pages. It is the same app
+in every SDK language (`c/examples/tour/app.c` for C; the specification is
+`docs/tour.md`), so it is also the place to see how a language writes each
+thing. What the `fmrb` package does not wrap is in `fmrb/raw` (generated, one
+Go function per boundary function, e.g. `raw.GfxFillArc`).
 
 ### The hooks
 
@@ -239,6 +257,7 @@ gives the launcher a name and the window its place. Keep it with the source:
 
 ```toml
 app_screen_name = "TinyGo hello"
+language = "tinygo"
 default_window_mode = "window"
 default_window_width = 160
 default_window_height = 70
@@ -268,6 +287,7 @@ The keys the firmware reads (fmruby-core's app spawner and launcher):
 | `task_stack_kb` | the app task's C stack in KB (wasm apps get 24 KB by default) | |
 | `icon` | the launcher icon, a path without the leading `/` (e.g. `"app/mine/hello.icon"`) | a letter `W` |
 | `launcher_visible` | `false`: run by path only, not listed in the launcher | listed |
+| `sdk_version` | the SDK version the app was built with; the build script writes it. The firmware names it when it refuses an app that imports a function it does not have | none |
 
 - The **category** is the directory under `/app` (`/app/tinygo/`,
   `/app/mine/`, ...); any directory works. The launcher lists the apps of all
@@ -287,7 +307,8 @@ ruby tinygo/build.rb hello
 
 ```
 .../tinygo/bin/tinygo build -target=wasm-unknown -gc=conservative -opt=z -no-debug -o .../tinygo/build/hello.app.wasm ./examples/hello
-.../tinygo/build/hello.app.wasm (7460 bytes)
+.../tinygo/build/hello.app.wasm (7538 bytes)
+.../tinygo/build/hello.app.toml (sdk_version = "0.1.0")
 ```
 
 - The output goes to `tinygo/build/` (ignored by git); `-o <dir or file>`
@@ -295,15 +316,32 @@ ruby tinygo/build.rb hello
   `flash/app/tinygo`.
 - The flags are fixed by the SDK: `wasm-unknown` (no WASI), the conservative
   GC (it frees memory), size optimisation, no debug info.
-- Optional: check the app's imports and hooks against the firmware's header.
-  The script reads `../fmruby-core/sdk/c/fmrb_boundary.h` (a fmruby-core
-  checkout next to the SDK); otherwise give the header:
+- The example's `hello.app.toml` is written next to the `.wasm` with
+  `sdk_version` set (one already there keeps the rest of its lines).
+- Optional: check the app's imports and hooks against the boundary:
 
   ```
-  ruby tools/check_bindings.rb --header <fmruby-core>/sdk/c/fmrb_boundary.h tinygo/build/hello.app.wasm
+  ruby tools/check_bindings.rb tinygo/build/hello.app.wasm
+  ruby tools/check_bindings.rb --against v0.1.0 tinygo/build/hello.app.wasm   # a release's boundary
   ```
 
   It prints the imports and hooks it found and `ok`.
+
+### C
+
+```
+ruby c/build.rb tour        # -> c/build/tour.app.wasm and tour.app.toml
+```
+
+A C app includes `fmrb_boundary.h` and calls the flat functions
+(`fmrb_gfx_fill_rect(0, x, y, w, h, color)`, drawer 0 is the window), defines
+the hooks it wants (`void on_create(void)`, `int32_t on_update(void)`,
+`void on_event(const fmrb_app_event_t *ev)`, ...) and puts
+`FMRB_EVENT_BUFFER();` in one file. There is no libc: the build is
+`zig cc -target wasm32-freestanding -nostdlib -Os -Wl,--no-entry
+-Wl,-z,stack-size=16384`; define `memcpy` and `memset` yourself if the
+compiler asks for them (`c/examples/tour/app.c` does). Strings are a pointer
+and a length, not NUL-terminated.
 
 ## 7. Run it
 
@@ -317,7 +355,6 @@ In the Family mruby development tree (`<fmruby-core>` below is its
 
    ```
    ruby tinygo/build.rb hello -o <fmruby-core>/flash/app/tinygo
-   cp tinygo/examples/hello/hello.app.toml <fmruby-core>/flash/app/tinygo/
    ```
 
 2. Build the Linux firmware in fmruby-core and fmruby-graphics-audio
@@ -348,7 +385,7 @@ the board's address (your router's client list, or its mDNS name
 ```
 curl -X POST "http://<device-ip>/fs/mkdir?path=/app/mine"
 curl -T tinygo/build/hello.app.wasm "http://<device-ip>/fs/put?path=/app/mine/hello.app.wasm"
-curl -T tinygo/examples/hello/hello.app.toml "http://<device-ip>/fs/put?path=/app/mine/hello.app.toml"
+curl -T tinygo/build/hello.app.toml "http://<device-ip>/fs/put?path=/app/mine/hello.app.toml"
 curl -X POST "http://<device-ip>/app/launch?path=/app/mine/hello.app.wasm"
 ```
 
@@ -377,6 +414,34 @@ launch steps work there too. This guide will be updated when that is in.
 The log of a board is on its serial line (fmruby-core's `rake monitor` or any
 serial monitor); it is not sent over WiFi.
 
+### (c) In the browser
+
+The public browser build, <https://family-mruby.github.io/studio/>, runs
+wasm apps too (the same WAMR, built into the page), and needs nothing
+installed. It already has `TinyGo bounce` and `TinyGo hello` in its
+launcher. To run your own app there:
+
+1. Put the app's two files in a folder of their own, named after the app:
+   `hello/hello.app.wasm` and `hello/hello.app.toml` (the build writes both
+   into `tinygo/build/`; copy them into the folder).
+2. Open the page and wait for the desktop. In the **Your files** panel under
+   the screen, use **Add Folder...** and pick the folder, or drop the folder
+   anywhere on the page. A folder with a `<name>.app.toml` at its top goes to
+   `/app/usr/<folder>/` (the place for apps you add); anything else would go
+   to `/home`. Files added one by one with **Files...** go where the **into**
+   list says: choose `/app/usr` there.
+3. Reload the launcher's list (the Reload button in its title bar, or F5)
+   and double-click your app, or open the Shell and type
+   `run /app/usr/hello/hello.app.wasm`.
+4. The log is the browser's developer console (F12), the same lines as on
+   the simulation.
+
+The files stay in the browser's storage (`/app/usr` and `/home` survive a
+reload; the panel's **Backup** saves them as a .tar). After a rebuild, add
+the folder again: the new files replace the old ones. A browser build older
+than your SDK refuses an app that uses functions it does not have, with the
+reason (section 8).
+
 ## 8. Troubleshooting
 
 | What you see | Why, and what to do |
@@ -387,7 +452,9 @@ serial monitor); it is not sent over WiFi.
 | `No on_create, on_update or on_event in ...` | the app exports none of the three, so it is refused at load. A TinyGo app built with the `fmrb` package always exports them; this is for C and other languages |
 | `wasm: [<name>] <hook> takes N and returns M values, expected ...` | a hook has the wrong shape (an app built against an older SDK). Rebuild with the current SDK |
 | `on_event needs fmrb_event_buffer (the SDK's event buffer) or a stack pointer global (__stack_pointer) for its record` | the app was built with an older SDK and has nowhere for the firmware to put the event record (a very small app whose optimiser dropped the stack pointer). Rebuild it with the current SDK: the `fmrb` package exports `fmrb_event_buffer`, the place the firmware writes the record into (a C app puts `FMRB_EVENT_BUFFER();` in one of its files) |
-| `... did not load: ...` / `... did not start: ...` | WAMR refused the module, for example it imports a function this firmware does not have (an SDK newer than the firmware) |
+| `imports fmrb.<name>, which this firmware does not have ...: the app was built with SDK X.Y.Z, newer than this firmware; update the firmware` | the app uses a function the firmware does not have (an SDK newer than the firmware). Update the firmware, or build the app with the SDK that matches it. `in another shape than this firmware's` is the same for a function whose parameters changed |
+| `imports <module>.<name>, but the firmware gives only "fmrb" functions` | the app imports WASI or libc functions (for example `printf` in C). Build without them |
+| `... did not load: ...` / `... did not start: ...` | WAMR refused the module (not wasm, a feature WAMR does not have, no memory) |
 | `wasm apps are not in this build` | the device has no WAMR (ESP32-S3, or a native or browser build made before wasm apps came to them) |
 | The app does not appear in the launcher | the launcher's list is from the last scan: reload it (the Reload button in its title bar, or F5). Or start it by path |
 | A see-through background | the color is 0x01 (see "Drawing") |
@@ -399,7 +466,7 @@ simulation, for `hello`:
 
 ```
 wasm: runtime started (pool 256 KB at ..., 122 boundary functions, ...)     # the first wasm app
-wasm: [TinyGo hello] loaded /app/tinygo/hello.app.wasm (7460 bytes, memory 2 pages, up to N, shared pool used N) on_create on_update on_event
+wasm: [TinyGo hello] loaded /app/tinygo/hello.app.wasm (7538 bytes, memory 2 pages, up to N, shared pool used N) on_create on_update on_event
 TinyGo hello: hello: started                                                 # the app's own LogInfo
 wasm: [TinyGo hello] ended (memory 2 pages)
 wasm: runtime ended (pool high mark N of 261608 bytes)                       # the last wasm app
@@ -414,14 +481,12 @@ it a larger pool where the device has one.
 
 ## 9. Limits today
 
-- The TinyGo bindings (`tinygo/fmrb/raw.go`) are written by hand and cover a
-  subset of the boundary: most of FmrbGfx without records (no images,
-  sprites or fonts yet), part of FmrbApp, notes in FmrbAudio, whole-file
-  FmrbFile, and the log. `check_bindings.rb` keeps them in line with the
-  header. Generating them from the same definitions as the header is planned.
+- `tinygo/fmrb/raw` has the whole boundary (generated); the `fmrb` package
+  wraps the common part in Go shapes (drawing, text and fonts, images, the
+  app's information, the clock, notes, whole-file FmrbFile, the log). For the
+  rest call `raw` directly.
 - The hook and record shapes are provisional and may change with the firmware.
-- Rust and Zig bindings are planned. A C app can already use the header
-  directly (`zig cc -target wasm32-freestanding`).
-- wasm apps run on ESP32-P4 boards and the Linux simulation only (section 1).
+- Rust and Zig bindings are planned (generated the same way).
+- wasm apps do not run on ESP32-S3 boards (section 1).
 - The development remote control has no authentication, and release builds
   do not have it yet (section 7 b).

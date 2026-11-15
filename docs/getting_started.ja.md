@@ -3,7 +3,8 @@
 [English](getting_started.md)
 
 この文書は、何も入っていない PC から始めて、TinyGo で書いたアプリを Family mruby の上で動かすまでの手順を
-示す。まず Linux のシミュレーション (sim) で動かし、次に ESP32-P4 のボードへ WiFi で送って動かす。題材は
+示す。Linux のシミュレーション (sim)、WiFi で送る ESP32-P4 のボード、Web のブラウザ版の 3 か所で動かす。
+C のアプリも、ビルドのスクリプトが違うだけで同じ手順になる (6 章)。題材は
 このリポジトリの `tinygo/examples/hello`。`hello` を自分のアプリの名前に読み替えれば、同じ手順で自分の
 アプリを作れる。
 
@@ -19,8 +20,10 @@ WebAssembly (`.app.wasm`) にコンパイルし、端末ではファームウェ
 アプリから呼べるもの (描画、アプリ自身の情報、音、ファイル、ログ) が、アプリとファームウェアの境界になる。
 境界はファームウェアの型定義 (fmruby-core の `sig/*.rbs`) の 1 か所で決まり、Ruby・Lua・MicroPython の
 関数も同じ定義から作られる。C 向けにはジェネレータがヘッダ (fmruby-core の `sdk/c/fmrb_boundary.h`) を
-出力する。これが ABI (関数の名前と引数、イベントのレコード、フック) になる。TinyGo のパッケージ
-`tinygo/fmrb` はこのヘッダに合わせて手で書いてあり、`tools/check_bindings.rb` で食い違いがないかを確認する。
+出力する (この SDK の `c/fmrb_boundary.h`)。これが ABI (関数の名前と引数、イベントのレコード、フック) になる。
+ジェネレータは境界をデータ (`boundary/boundary.json`) にも書き出し、この SDK はそこから TinyGo のパッケージ
+`tinygo/fmrb/raw` (全部の関数・レコード・選択肢) を生成する。パッケージ `tinygo/fmrb` はその上の手書きの層
+(フックと、よく使う関数の Go らしい形) で、生成物が境界と食い違っていないかは `tools/check_bindings.rb` で確認する。
 
 今 wasm のアプリが動く端末:
 
@@ -29,13 +32,15 @@ WebAssembly (`.app.wasm`) にコンパイルし、端末ではファームウェ
 | ESP32-P4 のボード (Modern。M5Stack Tab5 など) | 動く |
 | Linux の sim (docker) | 動く |
 | ESP32-S3 (Retro) | 動かない。起動は `wasm apps are not in this build` で断られる |
-| ネイティブ版 (Linux の 1 プロセス)、ブラウザ版 | 今の fmruby-core からビルドしたものなら動く (公開中のブラウザ版にはまだ入っていない) |
+| ネイティブ版 (Linux の 1 プロセス)、ブラウザ版 | 動く (公開中のブラウザ版には `TinyGo bounce` と `TinyGo hello` が入っている。7 章の c) |
 
 ## 2. 用意するもの
 
 - **TinyGo** と、それに対応する **Go**。この文書は TinyGo 0.44.0 と Go 1.26.11 で確認した。どちらも
   配布のアーカイブから入れる (<https://tinygo.org/getting-started/install/>、<https://go.dev/dl/>)。
 - **Ruby** (3.x)。ビルドと確認のスクリプトに使う。
+- C のアプリには **Zig** (その `zig cc`。Zig 0.17.1 で確認した)。`~/toolchains/zig-<版>/` に展開する
+  (または `ZIG=` で実行ファイルを指定)。clang と wasm-ld でもよい (`CC=clang`)。libc は要らない。
 - **git**。
 - sim で動かすなら: Family mruby の開発用のツリー (`family-mruby` リポジトリに `fmruby-core` と
   `fmruby-graphics-audio` を取り込んだもの) と Docker。そちらの README の「Testing Without Hardware」を参照。
@@ -68,9 +73,12 @@ cd family-mruby-sdk
 | パス | 中身 |
 |---|---|
 | `tinygo/fmrb/` | TinyGo のパッケージ: フック、`Window`、`App`、音、ファイル、ログ |
-| `tinygo/examples/` | サンプルアプリ (`hello`、`bounce`)。1 ディレクトリが 1 アプリで、`main.go` と `.app.toml` を置く |
-| `tinygo/build.rb` | サンプル 1 つをビルドして `<名前>.app.wasm` を作る |
-| `tools/check_bindings.rb` | バインディングとアプリを C のヘッダと照合する |
+| `tinygo/fmrb/raw/` | 境界の全部の関数・レコード・選択肢 (生成物) |
+| `tinygo/examples/` | サンプルアプリ (`hello`・`tour`・`bounce`)。1 ディレクトリが 1 アプリで、`main.go` と `.app.toml` を置く |
+| `tinygo/build.rb` | サンプル 1 つをビルドして `<名前>.app.wasm` とその `.app.toml` を作る |
+| `c/` | C のヘッダ (`fmrb_boundary.h`・`fmrb_sdk_version.h`)、`build.rb`、`examples/tour` |
+| `tools/check_bindings.rb` | 生成物とアプリの import を境界と照合する |
+| `docs/tour.md` | サンプル `tour` の仕様 (どの言語でも同じアプリ) |
 
 ## 4. アプリの形
 
@@ -90,8 +98,8 @@ type hello struct {
 }
 
 func (h *hello) OnCreate() {
-	h.bg = fmrb.RGB(0, 0, 128) // dark blue; RGB(0, 0, 64) would be 0x01, the transparent key
-	h.fg = fmrb.RGB(255, 255, 255)
+	h.bg = fmrb.RGB(255, 255, 255) // white paper (never 0x01: the transparent key)
+	h.fg = fmrb.RGB(0, 0, 0)
 	h.key = "-"
 	fmrb.LogInfo("hello: started")
 }
@@ -132,6 +140,11 @@ func main() {}
 ```
 
 `main` は空のままにする。フックを呼ぶのはファームウェアで、アプリ側にループは無い。
+
+`tinygo/examples/tour` はもう一歩進んだサンプルで、図形・日本語の文字・画像・音・ファイル・時計・アプリの
+情報を 5 ページで見せる。SDK のどの言語でも同じアプリ (C は `c/examples/tour/app.c`。仕様は `docs/tour.md`) なので、
+言語ごとの書き方を比べる場所にもなる。`fmrb` パッケージが包んでいないものは `fmrb/raw` にある (生成物。境界の
+関数 1 つに Go の関数 1 つ。例 `raw.GfxFillArc`)。
 
 ### フック
 
@@ -218,6 +231,7 @@ if data, ok := fmrb.FileRead("/home/hello.txt"); ok { ... }
 
 ```toml
 app_screen_name = "TinyGo hello"
+language = "tinygo"
 default_window_mode = "window"
 default_window_width = 160
 default_window_height = 70
@@ -247,6 +261,7 @@ default_window_pos_y = 50
 | `task_stack_kb` | アプリのタスクの C スタック (KB)。wasm のアプリの既定は 24 KB | |
 | `icon` | ランチャーのアイコン。先頭の `/` なしのパス (例 `"app/mine/hello.icon"`) | 文字の `W` |
 | `launcher_visible` | `false`: ランチャーに出さず、パス指定の起動だけにする | 出す |
+| `sdk_version` | アプリをビルドした SDK の版。ビルドのスクリプトが書く。ファームウェアに無い関数を使うアプリを断るとき、ファームウェアはこの版を示す | なし |
 
 - **カテゴリは `/app` の下のディレクトリで決まる** (`/app/tinygo/`・`/app/mine/` など。どのディレクトリでも
   よい)。ランチャーは全カテゴリのアプリを名前順に並べて出す (端末の設定でカテゴリごと隠すこともできる)。
@@ -263,21 +278,37 @@ ruby tinygo/build.rb hello
 
 ```
 .../tinygo/bin/tinygo build -target=wasm-unknown -gc=conservative -opt=z -no-debug -o .../tinygo/build/hello.app.wasm ./examples/hello
-.../tinygo/build/hello.app.wasm (7460 bytes)
+.../tinygo/build/hello.app.wasm (7538 bytes)
+.../tinygo/build/hello.app.toml (sdk_version = "0.1.0")
 ```
 
 - 出力先は `tinygo/build/` (git の管理外)。`-o <ディレクトリかファイル>` で別の場所に出せる。たとえば
   fmruby-core の `flash/app/tinygo` に直接出せる。
 - フラグは SDK が固定している: `wasm-unknown` (WASI なし)、conservative の GC (メモリを解放する)、
   サイズ優先の最適化、デバッグ情報なし。
-- 任意: アプリの import とフックを、ファームウェアのヘッダと照合する。スクリプトは
-  `../fmruby-core/sdk/c/fmrb_boundary.h` (SDK の隣にある fmruby-core) を読む。隣に無ければヘッダを渡す:
+- サンプルの `hello.app.toml` が `.wasm` の隣に、`sdk_version` を入れて書かれる (既にあれば、ほかの行は
+  そのまま残す)。
+- 任意: アプリの import とフックを境界と照合する:
 
   ```
-  ruby tools/check_bindings.rb --header <fmruby-core>/sdk/c/fmrb_boundary.h tinygo/build/hello.app.wasm
+  ruby tools/check_bindings.rb tinygo/build/hello.app.wasm
+  ruby tools/check_bindings.rb --against v0.1.0 tinygo/build/hello.app.wasm   # リリースの版の境界と
   ```
 
   見つけた import とフックを表示し、最後に `ok` と出る。
+
+### C
+
+```
+ruby c/build.rb tour        # -> c/build/tour.app.wasm と tour.app.toml
+```
+
+C のアプリは `fmrb_boundary.h` を include して平らな関数を呼び (`fmrb_gfx_fill_rect(0, x, y, w, h, color)`。
+描画先 0 が Window)、使うフック (`void on_create(void)`・`int32_t on_update(void)`・
+`void on_event(const fmrb_app_event_t *ev)` など) を定義し、どれか 1 つのファイルに `FMRB_EVENT_BUFFER();` と
+書く。libc は無い。ビルドは `zig cc -target wasm32-freestanding -nostdlib -Os -Wl,--no-entry
+-Wl,-z,stack-size=16384`。コンパイラが `memcpy`・`memset` を求めたら自分で定義する (`c/examples/tour/app.c` が
+そうしている)。文字列はポインタと長さで渡し、NUL 終端ではない。
 
 ## 7. 動かす
 
@@ -290,7 +321,6 @@ Family mruby の開発用のツリーで行う (以下の `<fmruby-core>` はそ
 
    ```
    ruby tinygo/build.rb hello -o <fmruby-core>/flash/app/tinygo
-   cp tinygo/examples/hello/hello.app.toml <fmruby-core>/flash/app/tinygo/
    ```
 
 2. fmruby-core と fmruby-graphics-audio を Linux 向けにビルドし (それぞれで `rake build:linux`。直前が
@@ -317,7 +347,7 @@ Family mruby の開発用のツリーで行う (以下の `<fmruby-core>` はそ
 ```
 curl -X POST "http://<device-ip>/fs/mkdir?path=/app/mine"
 curl -T tinygo/build/hello.app.wasm "http://<device-ip>/fs/put?path=/app/mine/hello.app.wasm"
-curl -T tinygo/examples/hello/hello.app.toml "http://<device-ip>/fs/put?path=/app/mine/hello.app.toml"
+curl -T tinygo/build/hello.app.toml "http://<device-ip>/fs/put?path=/app/mine/hello.app.toml"
 curl -X POST "http://<device-ip>/app/launch?path=/app/mine/hello.app.wasm"
 ```
 
@@ -341,6 +371,26 @@ ruby tools/fmrb_rd_launch.rb <device-ip> /app/mine/hello.app.wasm
 
 ボードのログはシリアルに出る (fmruby-core の `rake monitor` か、任意のシリアルモニタ)。WiFi には流れない。
 
+### (c) ブラウザで動かす
+
+公開中のブラウザ版 <https://family-mruby.github.io/studio/> でも wasm のアプリが動く (同じ WAMR をページに
+組み込んである)。何もインストールしなくてよい。ランチャーには `TinyGo bounce` と `TinyGo hello` が入っている。
+自分のアプリを動かすには:
+
+1. アプリの 2 つのファイルを、アプリの名前のフォルダに入れる: `hello/hello.app.wasm` と `hello/hello.app.toml`
+   (ビルドが両方を `tinygo/build/` に書くので、フォルダに写す)。
+2. ページを開き、デスクトップが出るまで待つ。画面の下の **Your files** の欄で **Add Folder...** からフォルダを
+   選ぶか、フォルダをページのどこかにドロップする。一番上に `<名前>.app.toml` があるフォルダは
+   `/app/usr/<フォルダ>/` (自分で足すアプリの置き場) に入る。それ以外は `/home` に入る。**Files...** で
+   ファイルを 1 つずつ足すときは、**into** の一覧で選んだ場所に入るので `/app/usr` を選ぶ。
+3. ランチャーの一覧を読み直して (タイトルバーの Reload ボタン、または F5) アプリをダブルクリックする。
+   または Shell を開いて `run /app/usr/hello/hello.app.wasm` と打つ。
+4. ログはブラウザの開発者ツールのコンソール (F12) に、sim と同じ行で出る。
+
+ファイルはブラウザの記憶域に残る (`/app/usr` と `/home` はページを読み直しても消えない。欄の **Backup** で
+.tar に保存できる)。ビルドし直したら、もう一度フォルダを足すと新しいファイルで置き換わる。SDK より古い
+ブラウザ版は、自分に無い関数を使うアプリを理由つきで断る (8 章)。
+
 ## 8. うまくいかないとき
 
 | 症状 | 原因と対処 |
@@ -351,7 +401,9 @@ ruby tools/fmrb_rd_launch.rb <device-ip> /app/mine/hello.app.wasm
 | `No on_create, on_update or on_event in ...` | 3 つのどれも export していないので、読み込みの時点で断られた。`fmrb` パッケージでビルドした TinyGo のアプリは必ず export するので、C などほかの言語向けの話 |
 | `wasm: [<名前>] <フック> takes N and returns M values, expected ...` | フックの形が違う (古い SDK でビルドしたアプリ)。今の SDK でビルドし直す |
 | `on_event needs fmrb_event_buffer (the SDK's event buffer) or a stack pointer global (__stack_pointer) for its record` | 古い SDK でビルドしたアプリで、ファームウェアがイベントのレコードを置く場所が無い (最適化でスタックポインタが消えた小さいアプリ)。今の SDK でビルドし直す。`fmrb` パッケージは、ファームウェアがレコードを書き込む置き場 `fmrb_event_buffer` を export する (C のアプリはどれか 1 つのファイルに `FMRB_EVENT_BUFFER();` と書く) |
-| `... did not load: ...` / `... did not start: ...` | WAMR がモジュールを受け付けなかった。たとえばこのファームウェアに無い関数を import している (SDK がファームウェアより新しい) |
+| `imports fmrb.<名前>, which this firmware does not have ...: the app was built with SDK X.Y.Z, newer than this firmware; update the firmware` | ファームウェアに無い関数をアプリが使っている (SDK がファームウェアより新しい)。ファームウェアを更新するか、ファームウェアに合う版の SDK でビルドする。`in another shape than this firmware's` は、引数の変わった関数について同じこと |
+| `imports <モジュール>.<名前>, but the firmware gives only "fmrb" functions` | WASI や libc の関数を import している (C の `printf` など)。使わずにビルドする |
+| `... did not load: ...` / `... did not start: ...` | WAMR がモジュールを受け付けなかった (wasm でない、WAMR に無い機能、メモリ不足) |
 | `wasm apps are not in this build` | その端末には WAMR が入っていない (ESP32-S3、または wasm のアプリに対応する前のネイティブ版・ブラウザ版) |
 | ランチャーにアプリが出ない | ランチャーの一覧は前回の走査の結果。読み直す (タイトルバーの Reload ボタン、または F5)。パスを指定して起動してもよい |
 | 背景が透ける | 色が 0x01 になっている (「Window に描く」を参照) |
@@ -362,7 +414,7 @@ wasm のエンジンのログは、どれも `wasm:` で始まる。アプリ自
 
 ```
 wasm: runtime started (pool 256 KB at ..., 122 boundary functions, ...)     # the first wasm app
-wasm: [TinyGo hello] loaded /app/tinygo/hello.app.wasm (7460 bytes, memory 2 pages, up to N, shared pool used N) on_create on_update on_event
+wasm: [TinyGo hello] loaded /app/tinygo/hello.app.wasm (7538 bytes, memory 2 pages, up to N, shared pool used N) on_create on_update on_event
 TinyGo hello: hello: started                                                 # the app's own LogInfo
 wasm: [TinyGo hello] ended (memory 2 pages)
 wasm: runtime ended (pool high mark N of 261608 bytes)                       # the last wasm app
@@ -375,12 +427,10 @@ wasm: runtime ended (pool high mark N of 261608 bytes)                       # t
 
 ## 9. 今の制約
 
-- TinyGo のバインディング (`tinygo/fmrb/raw.go`) は手書きで、境界の一部だけを扱う: FmrbGfx のうち
-  レコードを使わないものの多く (画像・スプライト・フォントはまだ)、FmrbApp の一部、FmrbAudio の音、
-  ファイル全体を読み書きする FmrbFile、ログ。`check_bindings.rb` でヘッダとの食い違いを防いでいる。
-  ヘッダと同じ定義からバインディングを生成する計画がある。
+- `tinygo/fmrb/raw` は境界の全部を持つ (生成物)。`fmrb` パッケージはそのうちよく使う部分を Go らしい形に
+  包んでいる (描画、文字とフォント、画像、アプリの情報、時計、音、ファイル全体の FmrbFile、ログ)。ほかは
+  `raw` を直接呼ぶ。
 - フックとレコードの形は暫定で、ファームウェアに合わせて変わることがある。
-- Rust と Zig のバインディングは計画中。C のアプリはヘッダを直接使って今でも書ける
-  (`zig cc -target wasm32-freestanding`)。
-- wasm のアプリが動くのは ESP32-P4 のボードと Linux の sim だけ (1 章)。
+- Rust と Zig のバインディングは計画中 (同じ形で生成する)。
+- wasm のアプリは ESP32-S3 のボードでは動かない (1 章)。
 - 開発用の遠隔操作には認証が無く、リリースビルドにはまだ入っていない (7 章の b)。
