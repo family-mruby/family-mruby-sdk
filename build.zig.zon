@@ -1,0 +1,16 @@
+.{
+    // The Zig SDK of Family mruby: the module "fmrb" (zig/src/fmrb.zig over
+    // the generated zig/src/raw.zig) and addApp (build.zig). No
+    // dependencies. It is at the repository's root because `zig fetch`
+    // takes a whole repository; `paths` keeps the package to the Zig part.
+    .name = .family_mruby_sdk,
+    .version = "0.1.0",
+    .fingerprint = 0x7d187230b789c5fc,
+    .minimum_zig_version = "0.15.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "zig/src",
+        "LICENSE",
+    },
+}

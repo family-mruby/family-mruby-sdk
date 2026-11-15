@@ -1,0 +1,20 @@
+# The build settings of a Family mruby app in Rust. Copy this file into your
+# crate as .cargo/config.toml; then `cargo build --release` makes
+# target/wasm32-unknown-unknown/release/<crate>.wasm. (The SDK's own
+# examples are built with it too.)
+
+[build]
+# wasm without WASI: the firmware gives the app only its own functions.
+target = "wasm32-unknown-unknown"
+
+[target.wasm32-unknown-unknown]
+# A 16 KB stack: without it the linker reserves 1 MiB and the app starts
+# with 17 pages (64 KB each) of memory.
+rustflags = ["-C", "link-arg=-zstack-size=16384"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+codegen-units = 1
+strip = true

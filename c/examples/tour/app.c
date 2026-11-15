@@ -11,14 +11,16 @@
  *   the page's own keys are listed at its bottom
  *
  * It calls the boundary's flat functions (fmrb_boundary.h) directly, with no
- * libc: freestanding wasm, built by c/build.rb with zig cc.
+ * libc: freestanding wasm, built by c/build.rb (or its Makefile) with zig cc.
  */
 #include <stdint.h>
 #include "fmrb_boundary.h"
 #include "fmrb_sdk_version.h"
 
-/* The place the firmware writes on_event's record into. */
+/* Once in the app: the place the firmware writes on_event's record into,
+   and the SDK version (the custom section "fmrb.sdk"). */
 FMRB_EVENT_BUFFER();
+FMRB_SDK_VERSION_SECTION();
 
 /* The compiler may call these for copies and clears; with no libc the app
    brings its own (an import of env.memcpy would be refused at load). */

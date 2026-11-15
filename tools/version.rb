@@ -9,7 +9,7 @@
 #   ruby tools/version.rb --base old.json --from 0.1.0
 #                                          # against a boundary.json of 0.1.0
 #   ruby tools/version.rb --write          # also write VERSION (and the version in
-#                                          # rust/Cargo.toml and zig/build.zig.zon)
+#                                          # rust/Cargo.toml and build.zig.zon)
 #                                          # and regenerate
 #
 # Breaking: something an app built before may use changed or went away -- a

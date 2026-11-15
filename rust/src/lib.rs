@@ -103,14 +103,22 @@ pub trait App {
 pub struct EventBuffer(pub [u8; raw::EVENT_BUFFER_SIZE]);
 
 /// Names the app's type and exports the hooks for it, with the event
-/// buffer. The type implements [`App`] and [`Default`]; its value is made
-/// before the first hook runs and lives as long as the app.
+/// buffer and the SDK version (the custom section "fmrb.sdk"). The type
+/// implements [`App`] and [`Default`]; its value is made before the first
+/// hook runs and lives as long as the app.
 #[macro_export]
 macro_rules! app {
     ($t:ty) => {
         const _: () = {
             static mut APP: ::core::option::Option<$t> = ::core::option::Option::None;
             static mut EVENT_BUFFER: $crate::EventBuffer = $crate::EventBuffer([0; $crate::raw::EVENT_BUFFER_SIZE]);
+            // The SDK version, in the module's custom section "fmrb.sdk"
+            // (the firmware names it when it refuses an app that imports a
+            // function it does not have). In the app's crate, so that it is
+            // linked with or without LTO.
+            #[unsafe(link_section = "fmrb.sdk")]
+            #[used]
+            static SDK_VERSION: [u8; $crate::raw::SDK_VERSION_SECTION.len()] = $crate::raw::SDK_VERSION_SECTION;
 
             fn app() -> &'static mut $t {
                 // The firmware calls one hook at a time, on one thread.

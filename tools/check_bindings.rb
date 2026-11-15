@@ -26,6 +26,8 @@
 #    is built first with its language's build script into a temporary
 #    directory and checked as an app; a language whose toolchain is missing
 #    is skipped with a note.
+# 4. The SDK version the app carries (the custom section "fmrb.sdk") is
+#    printed; an example (--examples) must carry this SDK's VERSION.
 # Exit status 1 on any difference.
 require 'optparse'
 require 'open3'
@@ -167,11 +169,15 @@ apps.each do |path|
   imports = []
   exports = []
   funcs_defined = [] # type index of each function the module defines
+  sdk_versions = [] # the contents of the custom sections "fmrb.sdk"
   while i < s.bytesize
     id = s.getbyte(i)
     size, i = leb(s, i + 1)
     j = i
     case id
+    when 0
+      l, j = leb(s, j)
+      sdk_versions << s[j + l...i + size] if s[j, l] == Boundary::SDK_SECTION
     when 1
       n, j = leb(s, j)
       n.times do
@@ -232,9 +238,14 @@ apps.each do |path|
     puts "#{File.basename(path)}: note: on_event without #{buf} (built with an older SDK; " \
          'the firmware puts the record on the stack)'
   end
-  label = tmp && path.start_with?(tmp) ? path.delete_prefix("#{tmp}/") : File.basename(path)
-  puts "#{label}: #{s.bytesize} bytes, #{imports.size} imports " \
-       "(#{imports.map { |_, n, _| n }.join(' ')}), hooks #{found.join(' ')}"
+  example = tmp && path.start_with?(tmp)
+  label = example ? path.delete_prefix("#{tmp}/") : File.basename(path)
+  sdk = sdk_versions.size == 1 ? sdk_versions.first : nil
+  if example && sdk != Boundary.version
+    errors << "#{label}: the section #{Boundary::SDK_SECTION} is #{sdk_versions.inspect}, VERSION #{Boundary.version}"
+  end
+  puts "#{label}: #{s.bytesize} bytes, SDK #{sdk || "unknown (#{Boundary::SDK_SECTION}: #{sdk_versions.inspect})"}, " \
+       "#{imports.size} imports (#{imports.map { |_, n, _| n }.join(' ')}), hooks #{found.join(' ')}"
 end
 
 FileUtils.rm_rf(tmp) if tmp

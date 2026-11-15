@@ -12,8 +12,8 @@
 # the SDK fixes: freestanding wasm32 (no libc, no WASI), no entry point (the
 # firmware calls the hooks), size optimisation, a 16 KB stack.
 #
-# The .app.toml next to the .wasm gets sdk_version = this SDK's VERSION, as
-# tinygo/build.rb does (copied from the example when there is none yet).
+# The example's <name>.app.toml is copied next to the .wasm when there is
+# none there yet.
 require 'fileutils'
 require 'optparse'
 
@@ -50,13 +50,12 @@ puts cmd.join(' ')
 system(env, *cmd) or abort 'build failed'
 puts "#{out} (#{File.size(out)} bytes)"
 
-version = File.read(File.join(C_DIR, '..', 'VERSION')).strip
-toml_out = out.sub(/\.app\.wasm\z/, '').sub(/\.wasm\z/, '') + '.app.toml'
-toml_src = File.exist?(toml_out) ? toml_out : File.join(src, "#{name}.app.toml")
-if File.exist?(toml_src)
-  toml = File.read(toml_src)
-  line = %(sdk_version = "#{version}")
-  toml = toml.match?(/^sdk_version\s*=.*$/) ? toml.sub(/^sdk_version\s*=.*$/, line) : "#{toml.chomp}\n#{line}\n"
-  File.write(toml_out, toml)
-  puts "#{toml_out} (#{line})"
+# The example's .app.toml goes next to the .wasm when there is none there
+# yet (one already there is kept as it is). The SDK version is in the
+# .wasm itself, the custom section "fmrb.sdk".
+toml_src = File.join(src, "#{name}.app.toml")
+toml_out = "#{out.sub(/\.app\.wasm\z/, '').sub(/\.wasm\z/, '')}.app.toml"
+if File.exist?(toml_src) && !File.exist?(toml_out)
+  FileUtils.cp(toml_src, toml_out)
+  puts toml_out
 end

@@ -2,8 +2,8 @@
 
 package raw
 
-// SDKVersion is this SDK's version (VERSION). An app's .app.toml gets it as
-// sdk_version when tinygo/build.rb builds the app.
+// SDKVersion is this SDK's version (VERSION). version.go puts it in the
+// module's custom section "fmrb.sdk".
 const SDKVersion = "0.1.0"
 
 // ABIHash changes whenever a function, a record or a hook of the boundary

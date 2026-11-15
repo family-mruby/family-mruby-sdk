@@ -17,11 +17,16 @@ module Boundary
   MANIFEST = File.join(ROOT, 'boundary', 'boundary.json')
   VERSION_FILE = File.join(ROOT, 'VERSION')
   TEMPLATES = File.join(ROOT, 'tools', 'templates')
+  # The wasm custom section every language's library puts the SDK version
+  # in (its content is VERSION, the semver string). The firmware reads it
+  # to name the version when it refuses an app.
+  SDK_SECTION = 'fmrb.sdk'
 
   # template (under tools/templates) => product (under the repository root)
   OUTPUTS = {
     'tinygo/raw.go.erb' => 'tinygo/fmrb/raw/raw.go',
     'tinygo/types.go.erb' => 'tinygo/fmrb/raw/types.go',
+    'tinygo/version.go.erb' => 'tinygo/fmrb/raw/version.go',
     'c/fmrb_sdk_version.h.erb' => 'c/fmrb_sdk_version.h',
     'rust/raw.rs.erb' => 'rust/src/raw/mod.rs',
     'rust/types.rs.erb' => 'rust/src/raw/types.rs',
@@ -31,7 +36,7 @@ module Boundary
   # The package files that carry the SDK version, and where in them.
   PACKAGE_VERSIONS = {
     'rust/Cargo.toml' => /\A(?:.*\n)*?version = "([^"]*)"/,
-    'zig/build.zig.zon' => /^\s*\.version = "([^"]*)"/
+    'build.zig.zon' => /^\s*\.version = "([^"]*)"/
   }.freeze
 
   module_function
@@ -60,7 +65,7 @@ module Boundary
   def render_all(manifest = load, ver = version)
     OUTPUTS.to_h do |tmpl, out|
       text = ERB.new(File.read(File.join(TEMPLATES, tmpl)), trim_mode: '-')
-                .result_with_hash(m: manifest, version: ver, go: Go, rust: Rust, zig: Zig)
+                .result_with_hash(m: manifest, version: ver, section: SDK_SECTION, go: Go, rust: Rust, zig: Zig)
       [out, text]
     end
   end

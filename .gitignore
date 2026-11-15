@@ -1,7 +1,8 @@
 tinygo/build/
 c/build/
+c/examples/*/*.wasm
 rust/build/
 rust/target/
 zig/build/
-zig/.zig-cache/
-zig/zig-out/
+.zig-cache/
+zig-out/

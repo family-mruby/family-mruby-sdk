@@ -1,6 +1,6 @@
-# The app of docs/getting_started.md (rust/examples/hello). rust/build.rb
-# writes this next to hello.app.wasm with sdk_version set; put both in a
-# directory under /app (the directory is the launcher's category).
+# The app of docs/getting_started.md (rust/examples/hello). Put it next
+# to hello.app.wasm, both in a directory under /app (the directory is the
+# launcher's category).
 app_screen_name = "Rust hello"
 language = "rust"
 default_window_mode = "window"

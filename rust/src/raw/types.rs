@@ -4,9 +4,13 @@
 //! the C header's packed struct; the asserts below check each size and
 //! offset against boundary.json when the crate is compiled.
 
-/// This SDK's version (VERSION). An app's .app.toml gets it as sdk_version
-/// when rust/build.rb builds the app.
+/// This SDK's version (VERSION).
 pub const SDK_VERSION: &str = "0.1.0";
+
+/// SDK_VERSION as the bytes the app! macro puts in the module's custom
+/// section "fmrb.sdk" (the firmware names the version when it refuses an
+/// app that imports a function it does not have).
+pub const SDK_VERSION_SECTION: [u8; 5] = *b"0.1.0";
 
 /// Changes whenever a function, a record or a hook of the boundary changes
 /// (FMRB_ABI_HASH in the C header).

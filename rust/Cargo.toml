@@ -1,7 +1,8 @@
 # The Rust SDK of Family mruby: the crate `fmrb` (src/lib.rs, hand-written)
 # over the generated bindings (src/raw/, tools/gen_bindings.rb). no_std, no
 # allocator, no dependencies. The examples are members of this workspace;
-# rust/build.rb builds them.
+# rust/build.rb builds them with the settings of rust/.cargo/config.toml (the
+# file an app copies into its own crate).
 [package]
 name = "family-mruby-sdk"
 version = "0.1.0"
@@ -23,12 +24,3 @@ panic-handler = []
 
 [workspace]
 members = ["examples/hello", "examples/tour"]
-
-# The settings the SDK fixes for apps (rust/build.rb adds the 16 KB stack:
-# without it the linker reserves 1 MiB and the module starts at 17 pages).
-[profile.release]
-opt-level = "s"
-lto = true
-panic = "abort"
-codegen-units = 1
-strip = true

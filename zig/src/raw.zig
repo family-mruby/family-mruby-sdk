@@ -13,9 +13,13 @@
 //! success, err_failed or err_arg otherwise (none where Ruby gives nil).
 //! Pointers are optional: null is C's NULL (a size query).
 
-/// This SDK's version (VERSION). An app's .app.toml gets it as sdk_version
-/// when zig/build.rb builds the app.
+/// This SDK's version (VERSION).
 pub const sdk_version = "0.1.0";
+
+/// The module's custom section fmrb.zig puts sdk_version in (the firmware
+/// names the version when it refuses an app that imports a function it
+/// does not have).
+pub const sdk_section = "fmrb.sdk";
 
 /// Changes whenever a function, a record or a hook of the boundary changes
 /// (FMRB_ABI_HASH in the C header).

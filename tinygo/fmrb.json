@@ -1,0 +1,5 @@
+{
+	"inherits": ["wasm-unknown"],
+	"gc": "conservative",
+	"ldflags": ["--strip-debug"]
+}

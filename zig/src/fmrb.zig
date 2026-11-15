@@ -24,12 +24,19 @@
 //! every function, record and choice; call it directly for the rest.
 //!
 //! Build: wasm32-freestanding, no entry point, exported symbols kept
-//! (rdynamic), a 16 KB stack (zig/build.zig, zig/build.rb).
+//! (rdynamic), a 16 KB stack (addApp in the build.zig at the repository root).
 const std = @import("std");
 
 pub const raw = @import("raw.zig");
 
 pub const sdk_version = raw.sdk_version;
+
+// The SDK version, in the module's custom section "fmrb.sdk" (the firmware
+// names it when it refuses an app that imports a function it does not
+// have). Zig has no way to make a custom section; the assembler has.
+comptime {
+    asm (".section .custom_section." ++ raw.sdk_section ++ ",\"\",@\n.ascii \"" ++ raw.sdk_version ++ "\"\n");
+}
 
 /// Results of the boundary functions.
 pub const err_failed = raw.err_failed;

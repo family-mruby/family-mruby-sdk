@@ -1,19 +1,21 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 #
-# Build a Zig example into a Family mruby wasm app.
+# Build a Zig example of this repository into a Family mruby wasm app (for
+# the SDK's maintainers and its examples; an app of your own is built with
+# `zig build` and the SDK's addApp, docs/getting_started.md).
 #
 #   ruby zig/build.rb tour                      # -> zig/build/tour.app.wasm
 #   ruby zig/build.rb tour -o <dir or file>     # e.g. fmruby-core/flash/app/zig
 #
 # The toolchain: zig (ZIG, default the newest ~/toolchains/zig-*/zig; 0.15
-# or later). Nothing is downloaded. It runs `zig build -Dexample=<name>`
-# (zig/build.zig, whose addApp holds the settings the SDK fixes:
+# or later). Nothing is downloaded. It runs `zig build -Dexample=<name>` at
+# the repository's root (build.zig, whose addAppModule holds the settings:
 # wasm32-freestanding, no entry point, exports kept, ReleaseSmall,
 # stripped, a 16 KB stack). Caches stay under ~/toolchains/cache.
 #
-# The .app.toml next to the .wasm gets sdk_version = this SDK's VERSION, as
-# tinygo/build.rb does (copied from the example when there is none yet).
+# The example's <name>.app.toml is copied next to the .wasm when there is
+# none there yet.
 require 'fileutils'
 require 'optparse'
 
@@ -40,17 +42,16 @@ cache = File.join(TOOLCHAINS, 'cache')
 env = { 'ZIG_GLOBAL_CACHE_DIR' => File.join(cache, 'zig'), 'ZIG_LOCAL_CACHE_DIR' => File.join(cache, 'zig-local') }
 cmd = [zig, 'build', "-Dexample=#{name}", '--prefix', prefix]
 puts cmd.join(' ')
-system(env, *cmd, chdir: ZIG_DIR) or abort 'zig build failed'
-FileUtils.cp(File.join(prefix, 'bin', "#{name}.wasm"), out)
+system(env, *cmd, chdir: File.dirname(ZIG_DIR)) or abort 'zig build failed'
+FileUtils.cp(File.join(prefix, 'bin', "#{name}.app.wasm"), out)
 puts "#{out} (#{File.size(out)} bytes)"
 
-version = File.read(File.join(ZIG_DIR, '..', 'VERSION')).strip
-toml_out = out.sub(/\.app\.wasm\z/, '').sub(/\.wasm\z/, '') + '.app.toml'
-toml_src = File.exist?(toml_out) ? toml_out : File.join(src, "#{name}.app.toml")
-if File.exist?(toml_src)
-  toml = File.read(toml_src)
-  line = %(sdk_version = "#{version}")
-  toml = toml.match?(/^sdk_version\s*=.*$/) ? toml.sub(/^sdk_version\s*=.*$/, line) : "#{toml.chomp}\n#{line}\n"
-  File.write(toml_out, toml)
-  puts "#{toml_out} (#{line})"
+# The example's .app.toml goes next to the .wasm when there is none there
+# yet (one already there is kept as it is). The SDK version is in the
+# .wasm itself, the custom section "fmrb.sdk".
+toml_src = File.join(src, "#{name}.app.toml")
+toml_out = "#{out.sub(/\.app\.wasm\z/, '').sub(/\.wasm\z/, '')}.app.toml"
+if File.exist?(toml_src) && !File.exist?(toml_out)
+  FileUtils.cp(toml_src, toml_out)
+  puts toml_out
 end

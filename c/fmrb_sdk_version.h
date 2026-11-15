@@ -7,8 +7,9 @@
  * went away; MINOR when some were added; PATCH for the rest (tools/version.rb
  * compares boundary.json with the last release's). The firmware does not
  * compare numbers: it refuses, before the app starts, an app that imports a
- * function it does not have. Put the version in the app's .app.toml as
- * sdk_version (the TinyGo build script does it).
+ * function it does not have, and names the version the app was built with,
+ * which it reads from the module's custom section "fmrb.sdk"
+ * (FMRB_SDK_VERSION_SECTION below).
  */
 #ifndef FMRB_SDK_VERSION_H
 #define FMRB_SDK_VERSION_H
@@ -19,5 +20,18 @@
 #define FMRB_SDK_VERSION "0.1.0"
 /** The boundary this version was generated from (FMRB_ABI_HASH of fmrb_boundary.h). */
 #define FMRB_SDK_ABI_HASH 0x922a7dadu
+
+/**
+ * FMRB_SDK_VERSION_SECTION(); at file scope, in one file of the app, puts
+ * FMRB_SDK_VERSION into the module as the custom section "fmrb.sdk" (a
+ * second file with it would repeat the text). wasm-ld keeps the section,
+ * --strip-all included.
+ */
+#if defined(__wasm__)
+#define FMRB_SDK_VERSION_SECTION() \
+    __asm__(".section .custom_section.fmrb.sdk,\"\",@\n.ascii \"" FMRB_SDK_VERSION "\"\n")
+#else
+#define FMRB_SDK_VERSION_SECTION() extern int fmrb_sdk_version_section_unused_
+#endif
 
 #endif /* FMRB_SDK_VERSION_H */
