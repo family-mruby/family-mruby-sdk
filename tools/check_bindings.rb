@@ -1,91 +1,76 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 #
-# Check the hand-written TinyGo bindings against the generated C header, and
-# (optionally) a built app's imports.
+# Check that the SDK matches its boundary, and (optionally) what built apps
+# import.
 #
-#   ruby tools/check_bindings.rb [--header PATH] [app.wasm ...]
+#   ruby tools/check_bindings.rb [app.wasm ...]
+#   ruby tools/check_bindings.rb --against v0.1.0 app.wasm   # an older boundary
+#   ruby tools/check_bindings.rb --against old.json app.wasm
 #
-# The header is fmruby-core's generated sdk/c/fmrb_boundary.h; by default the
-# one in a fmruby-core checkout next to this repository
-# (../fmruby-core/sdk/c/fmrb_boundary.h). It is not copied here yet: the
-# generator writes each description in Japanese and English, and this
-# repository keeps its sources ASCII.
-#
-# 1. Every //go:wasmimport fmrb <name> in tinygo/fmrb/*.go must be a function
-#    the header declares (FMRB_IMPORT("<name>")), with the same number of
-#    parameters, each of the same wasm type (int32/uint32/pointer -> i32,
-#    int64 -> i64, double/float64 -> f64), and the same result.
-# 2. Every "fmrb" import of each .wasm given must be in the header with the
-#    same wasm type, and every hook it exports (the functions the firmware
-#    calls: FMRB_EXPORT("<name>") at the header's end, and _initialize) must
-#    have the header's wasm type.
+# 1. Every generated file (tinygo/fmrb/raw/, c/fmrb_sdk_version.h) is what
+#    tools/gen_bindings.rb makes from boundary/boundary.json and VERSION now.
+# 2. c/fmrb_boundary.h (from fmruby-core) declares the same functions and
+#    hooks, with the same wasm types, and has the same ABI hash.
+# 3. Every "fmrb" import of each .wasm given is a function of the boundary
+#    with the same wasm type, and every hook it exports has the boundary's
+#    type. With --against, the boundary is that git tag's (or that file's)
+#    instead of the current one: "would this app run on a firmware of that
+#    version?" (a firmware refuses an app that imports what it lacks).
 # Exit status 1 on any difference.
 require 'optparse'
+require 'open3'
+require_relative 'lib/boundary'
 
-ROOT = File.expand_path('..', __dir__)
-header = ENV['FMRB_HEADER'] || File.expand_path('../fmruby-core/sdk/c/fmrb_boundary.h', ROOT)
-OptionParser.new { |o| o.on('--header PATH') { |v| header = v } }.parse!
-
-C_TYPES = { 'int32_t' => 'i32', 'uint32_t' => 'i32', 'int16_t' => 'i32', 'uint16_t' => 'i32',
-            'int8_t' => 'i32', 'uint8_t' => 'i32', 'int64_t' => 'i64', 'uint64_t' => 'i64',
-            'double' => 'f64', 'float' => 'f32' }.freeze
-GO_TYPES = { 'int32' => 'i32', 'uint32' => 'i32', 'unsafe.Pointer' => 'i32', 'uintptr' => 'i32',
-             'int64' => 'i64', 'uint64' => 'i64', 'float64' => 'f64', 'float32' => 'f32' }.freeze
-
-def c_wasm_type(t)
-  t = t.strip.sub(/\Aconst\s+/, '')
-  return 'i32' if t.include?('*')
-  C_TYPES.fetch(t.split.first) { abort "unknown C type #{t}" }
-end
-
-# name => [params, result]
-c = {}
-File.read(header).scan(/FMRB_IMPORT\("(\w+)"\)\s*\n\s*(\w+)\s+\w+\(([^)]*)\);/) do |name, ret, args|
-  params = args.strip == 'void' ? [] : args.split(',').map { |a| c_wasm_type(a.sub(/\w+\s*\z/, '')) }
-  c[name] = [params, ret == 'void' ? nil : c_wasm_type(ret)]
-end
-abort "no functions read from #{header}" if c.empty?
-
-# the hooks: name => [params, result]
-hooks = { '_initialize' => [[], nil] }
-File.read(header).scan(/FMRB_EXPORT\("(\w+)"\)\s*\n\s*([\w ]+?\s*\*?)\s*\w+\(([^)]*)\);/) do |name, ret, args|
-  params = args.strip == 'void' ? [] : args.split(',').map { |a| c_wasm_type(a.sub(/\w+\s*\z/, '')) }
-  ret = ret.strip
-  hooks[name] = [params, ret == 'void' ? nil : c_wasm_type(ret)]
-end
-abort "no hooks read from #{header}" if hooks.size == 1
+against = nil
+OptionParser.new do |o|
+  o.banner = 'usage: check_bindings.rb [--against TAG|FILE] [app.wasm ...]'
+  o.on('--against REF', 'check the apps against an older boundary (a git tag or a boundary.json)') { |v| against = v }
+end.parse!
 
 errors = []
-go = {}
-Dir[File.join(ROOT, 'tinygo', 'fmrb', '*.go')].each do |f|
-  File.read(f).scan(/^\/\/go:wasmimport\s+(\w+)\s+(\w+)\s*\nfunc\s+\w+\(([^)]*)\)\s*([\w.]*)/) do |mod, name, args, ret|
-    errors << "#{name}: import module #{mod}, expected fmrb" unless mod == 'fmrb'
-    # Go groups names before one type: "x, y int32"
-    types = []
-    pending = 0
-    args.split(',').map(&:strip).reject(&:empty?).each do |a|
-      parts = a.split
-      if parts.size == 1
-        pending += 1
-      else
-        (pending + 1).times { types << GO_TYPES.fetch(parts[1]) { abort "unknown Go type #{parts[1]} in #{name}" } }
-        pending = 0
-      end
-    end
-    go[name] = [types, ret.empty? ? nil : GO_TYPES.fetch(ret) { abort "unknown Go type #{ret}" }]
-  end
-end
-go.each do |name, sig|
-  if !c.key?(name)
-    errors << "#{name}: not in the header"
-  elsif c[name] != sig
-    errors << "#{name}: Go #{sig.inspect}, header #{c[name].inspect}"
-  end
-end
-puts "tinygo/fmrb: #{go.size} imports checked against #{c.size} functions of #{File.basename(header)}"
+manifest = Boundary.load
 
-# ---- a .wasm's imports and exports
+# ---- 1. generated files
+Boundary.render_all(manifest).each do |path, text|
+  full = File.join(Boundary::ROOT, path)
+  errors << "#{path}: stale (run ruby tools/gen_bindings.rb)" unless File.exist?(full) && File.read(full) == text
+end
+puts "generated: #{Boundary::OUTPUTS.size} files from boundary #{manifest['abi_hash']}, SDK #{Boundary.version}"
+
+# ---- 2. the C header
+header_path = File.join(Boundary::ROOT, 'c', 'fmrb_boundary.h')
+header = File.read(header_path)
+hash = header[/#define FMRB_ABI_HASH 0x(\h+)u/, 1]
+errors << "c/fmrb_boundary.h: ABI hash #{hash}, boundary.json #{manifest['abi_hash']}" if hash != manifest['abi_hash']
+c_funcs = {}
+header.scan(/FMRB_IMPORT\("(\w+)"\)\s*\n\s*(\w+)\s+\w+\(([^)]*)\);/) do |name, ret, args|
+  params = args.strip == 'void' ? [] : args.split(',').map { |a| Boundary.wasm_of(a.sub(/\w+\s*\z/, '')) }
+  c_funcs[name] = [params, ret == 'void' ? nil : Boundary.wasm_of(ret)]
+end
+c_hooks = { '_initialize' => [[], nil] }
+header.scan(/FMRB_EXPORT\("(\w+)"\)\s*\n\s*([\w ]+?\s*\*?)\s*\w+\(([^)]*)\);/) do |name, ret, args|
+  params = args.strip == 'void' ? [] : args.split(',').map { |a| Boundary.wasm_of(a.sub(/\w+\s*\z/, '')) }
+  c_hooks[name] = [params, ret.strip == 'void' ? nil : Boundary.wasm_of(ret)]
+end
+errors << 'c/fmrb_boundary.h: functions differ from boundary.json' if c_funcs != Boundary.import_sigs(manifest)
+errors << 'c/fmrb_boundary.h: hooks differ from boundary.json' if c_hooks != Boundary.hook_sigs(manifest)
+puts "c/fmrb_boundary.h: #{c_funcs.size} functions, #{c_hooks.size - 1} hooks"
+
+# ---- 3. apps
+if against
+  path = against
+  unless File.exist?(path)
+    text, st = Open3.capture2('git', '-C', Boundary::ROOT, 'show', "#{against}:boundary/boundary.json")
+    abort "--against #{against}: no such file, and no boundary/boundary.json at that git ref" unless st.success?
+    path = nil
+  end
+  manifest = path ? Boundary.load(path) : JSON.parse(text)
+  puts "apps against the boundary of #{against} (#{manifest['abi_hash']})"
+end
+funcs = Boundary.import_sigs(manifest)
+hooks = Boundary.hook_sigs(manifest)
+
 def leb(s, i)
   v = 0
   shift = 0
@@ -107,7 +92,7 @@ ARGV.each do |path|
   types = []
   imports = []
   exports = []
-  funcs = [] # type index of each function the module defines
+  funcs_defined = [] # type index of each function the module defines
   while i < s.bytesize
     id = s.getbyte(i)
     size, i = leb(s, i + 1)
@@ -118,9 +103,9 @@ ARGV.each do |path|
       n.times do
         j += 1 # 0x60
         np, j = leb(s, j)
-        ps = Array.new(np) { (VT[s.getbyte(j)]).tap { j += 1 } }
+        ps = Array.new(np) { VT[s.getbyte(j)].tap { j += 1 } }
         nr, j = leb(s, j)
-        rs = Array.new(nr) { (VT[s.getbyte(j)]).tap { j += 1 } }
+        rs = Array.new(nr) { VT[s.getbyte(j)].tap { j += 1 } }
         types << [ps, rs.first]
       end
     when 2
@@ -133,12 +118,13 @@ ARGV.each do |path|
           t, j = leb(s, j)
           imports << [mod, name, types[t]]
         else
-          break # tables, memories and globals are not imported by these apps
+          errors << "#{path}: imports #{mod}.#{name} that is not a function (the firmware gives functions only)"
+          break
         end
       end
     when 3
       n, j = leb(s, j)
-      n.times { t, j = leb(s, j); funcs << t }
+      n.times { t, j = leb(s, j); funcs_defined << t }
     when 7
       n, j = leb(s, j)
       n.times do
@@ -151,12 +137,12 @@ ARGV.each do |path|
     i += size
   end
   imports.each do |mod, name, sig|
-    if mod != 'fmrb'
-      errors << "#{path}: imports #{mod}.#{name} (the firmware gives only fmrb)"
-    elsif !c.key?(name)
-      errors << "#{path}: imports fmrb.#{name}, not in the header"
-    elsif c[name] != sig
-      errors << "#{path}: fmrb.#{name} is #{sig.inspect}, header #{c[name].inspect}"
+    if mod != manifest['import_module']
+      errors << "#{path}: imports #{mod}.#{name} (the firmware gives only #{manifest['import_module']})"
+    elsif !funcs.key?(name)
+      errors << "#{path}: imports #{mod}.#{name}, not in the boundary"
+    elsif funcs[name] != sig
+      errors << "#{path}: #{mod}.#{name} is #{sig.inspect}, the boundary's #{funcs[name].inspect}"
     end
   end
   found = []
@@ -164,14 +150,16 @@ ARGV.each do |path|
     next unless hooks.key?(name)
 
     found << name
-    sig = idx < imports.size ? imports[idx][2] : types[funcs[idx - imports.size]]
-    errors << "#{path}: exports #{name} as #{sig.inspect}, header #{hooks[name].inspect}" if sig != hooks[name]
+    sig = idx < imports.size ? imports[idx][2] : types[funcs_defined[idx - imports.size]]
+    errors << "#{path}: exports #{name} as #{sig.inspect}, the boundary's #{hooks[name].inspect}" if sig != hooks[name]
   end
-  if found.include?('on_event') && !found.include?('fmrb_event_buffer')
-    puts "#{File.basename(path)}: note: on_event without fmrb_event_buffer (built with an older SDK; " \
+  buf = manifest['event_buffer'] && manifest['event_buffer']['export']
+  if buf && found.include?('on_event') && !found.include?(buf)
+    puts "#{File.basename(path)}: note: on_event without #{buf} (built with an older SDK; " \
          'the firmware puts the record on the stack)'
   end
-  puts "#{File.basename(path)}: #{s.bytesize} bytes, #{imports.size} imports (#{imports.map { |m, n, _| "#{m}.#{n}" }.join(' ')}), hooks #{found.join(' ')}"
+  puts "#{File.basename(path)}: #{s.bytesize} bytes, #{imports.size} imports " \
+       "(#{imports.map { |_, n, _| n }.join(' ')}), hooks #{found.join(' ')}"
 end
 
 if errors.empty?
