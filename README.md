@@ -14,51 +14,50 @@ names and shapes may still change.
 
 ## Languages
 
-| Language | Directory | Samples | Toolchain |
+| Language | You get the SDK with | You build with | Samples |
 |---|---|---|---|
-| C | `c/` | `tour` | Zig's `zig cc` (or clang with wasm-ld), no libc |
-| TinyGo | `tinygo/` | `hello`, `tour`, `bounce` | TinyGo and Go |
-| Rust | `rust/` | `hello`, `tour` | Rust with the `wasm32-unknown-unknown` target, `no_std` |
-| Zig | `zig/` | `hello`, `tour` | Zig 0.15 or later |
+| TinyGo | `go get github.com/family-mruby/family-mruby-sdk/tinygo` | `tinygo build -target=fmrb.json` | `hello`, `tour`, `bounce` |
+| Rust | `cargo add --git https://github.com/family-mruby/family-mruby-sdk family-mruby-sdk` | `cargo build --release` | `hello`, `tour` |
+| Zig | `zig fetch --save git+https://github.com/family-mruby/family-mruby-sdk` | `zig build` (the SDK's `addApp`) | `hello`, `tour` |
+| C | the two headers of `c/` (copied, or a git submodule) | `zig cc` or clang, one line (or a small Makefile) | `hello`, `tour` |
 
 Every language offers the same functions (drawing, text, pictures, sound,
 files, the log, clocks, the app's information, input), generated from the
 firmware's own definitions, with a hand-written layer that makes them feel
-natural in that language.
+natural in that language. The SDK's version goes into the `.wasm` (a custom
+section, `fmrb.sdk`); the firmware names it when it refuses an app made with
+a newer SDK.
 
-## Quick start
+## Quick start (TinyGo)
 
-You need Ruby 3.x and the toolchain of your language (versions and where to
-put them: [getting started, section 2](docs/getting_started.md#2-prerequisites)).
-
-```
-git clone https://github.com/family-mruby/family-mruby-sdk.git
-cd family-mruby-sdk
-ruby tinygo/build.rb hello      # -> tinygo/build/hello.app.wasm and hello.app.toml
-```
-
-The same for the other languages:
+You need TinyGo and its Go on `PATH` (versions in
+[getting started, section 2](docs/getting_started.md#2-prerequisites)).
 
 ```
-ruby rust/build.rb hello        # -> rust/build/hello.app.wasm (+ .app.toml)
-ruby zig/build.rb hello         # -> zig/build/hello.app.wasm (+ .app.toml)
-ruby c/build.rb tour            # -> c/build/tour.app.wasm (+ .app.toml)
+mkdir hello && cd hello
+go mod init example.com/hello
+go get github.com/family-mruby/family-mruby-sdk/tinygo
+cp "$(go list -m -f '{{.Dir}}' github.com/family-mruby/family-mruby-sdk/tinygo)/fmrb.json" .
+# write main.go and hello.app.toml (getting started, sections 4 and 5)
+tinygo build -target=fmrb.json -o hello.app.wasm .
 ```
+
+Rust, Zig and C: [getting started, section 6](docs/getting_started.md#6-rust-zig-and-c).
 
 An app is two files: `<name>.app.wasm` and `<name>.app.toml` (its name in
 the launcher, its window). Put both in a directory under `/app` on a
 device and launch it:
 
-- **Linux simulation**: build into the simulation's app directory
-  (`ruby tinygo/build.rb hello -o <fmruby-core>/flash/app/tinygo`), start it
-  and launch `TinyGo hello` from the launcher.
+- **Linux simulation**: copy them into a directory under the simulation's
+  app directory (`<fmruby-core>/flash/app/mine/`), start it and launch
+  `TinyGo hello` from the launcher.
 - **ESP32-P4 board** (M5Stack Tab5 and others) with a development build of
   the firmware: send the files over WiFi and launch it, no flashing needed:
 
   ```
   curl -X POST "http://<device-ip>/fs/mkdir?path=/app/mine"
-  curl -T tinygo/build/hello.app.wasm "http://<device-ip>/fs/put?path=/app/mine/hello.app.wasm"
-  curl -T tinygo/build/hello.app.toml "http://<device-ip>/fs/put?path=/app/mine/hello.app.toml"
+  curl -T hello.app.wasm "http://<device-ip>/fs/put?path=/app/mine/hello.app.wasm"
+  curl -T hello.app.toml "http://<device-ip>/fs/put?path=/app/mine/hello.app.toml"
   curl -X POST "http://<device-ip>/app/launch?path=/app/mine/hello.app.wasm"
   ```
 
@@ -68,55 +67,50 @@ device and launch it:
 wasm apps do not run on ESP32-S3 boards (Retro). The full steps, the shape
 of an app, the hooks and the troubleshooting table are in the guide.
 
-To check that an app only uses functions a firmware has:
-
-```
-ruby tools/check_bindings.rb tinygo/build/hello.app.wasm
-```
-
 ## Samples
 
 Every language has `tour`: hello plus a tour of the main functions (shapes,
 text and Japanese text, a picture, sound, files, the log, clocks, the app's
 information, key and pointer input) with the same content and screen in
-each language, so they can be compared. TinyGo, Rust and Zig also have
-`hello` (the smallest app, the one the guide builds), and TinyGo `bounce` (a
-small animation).
+each language, so they can be compared. Every language also has `hello`
+(the smallest app, the one the guide builds), and TinyGo `bounce` (a small
+animation).
 
 | tour | Size of the .wasm (SDK 0.1.0) |
 |---|---|
-| TinyGo | 16,956 B |
-| Rust | 11,016 B |
-| Zig | 10,639 B |
-| C | 9,143 B |
+| TinyGo | 16,972 B |
+| Rust | 11,036 B |
+| Zig | 10,655 B |
+| C | 9,159 B |
+
+In a checkout of this repository the samples are built by the scripts the
+SDK's maintainers use (Ruby 3.x; output in `<language>/build/`, or `-o
+<dir>`):
+
+```
+ruby tinygo/build.rb hello
+ruby rust/build.rb tour
+ruby zig/build.rb tour
+ruby c/build.rb hello
+```
 
 ## The repository
 
-| Path | What you use it for |
+| Path | What it is |
 |---|---|
-| `c/fmrb_boundary.h` | the C header: every function, record and hook |
-| `c/build.rb`, `c/examples/` | build a C app; the C samples |
-| `tinygo/fmrb/` | the TinyGo package you import (`fmrb`; everything else in `fmrb/raw`) |
-| `tinygo/build.rb`, `tinygo/examples/` | build a TinyGo app; the TinyGo samples |
-| `rust/` | the Rust crate `fmrb` (package `family-mruby-sdk`; everything else in `fmrb::raw`) |
-| `rust/build.rb`, `rust/examples/` | build a Rust app; the Rust samples |
-| `zig/` | the Zig package and its module `fmrb` (everything else in `fmrb.raw`) |
-| `zig/build.rb`, `zig/examples/` | build a Zig app; the Zig samples |
-| `tools/check_bindings.rb` | check a built app's imports and hooks |
+| `tinygo/` | the Go module `github.com/family-mruby/family-mruby-sdk/tinygo`: the package `fmrb` (everything else in `fmrb/raw`), the target file `fmrb.json`, the samples |
+| `rust/` | the crate `family-mruby-sdk` (library `fmrb`; everything else in `fmrb::raw`), `.cargo/config.toml` to copy into an app, the samples |
+| `build.zig`, `build.zig.zon`, `zig/` | the Zig package `family_mruby_sdk` (at the root, as `zig fetch` takes the whole repository): the module `fmrb` in `zig/src/` (everything else in `fmrb.raw`), `addApp`; the samples in `zig/examples/` |
+| `c/` | the headers `fmrb_boundary.h` (every function, record and hook) and `fmrb_sdk_version.h`; the samples (`hello` has a Makefile) |
+| `<language>/build.rb` | build a sample (for maintainers) |
+| `tools/check_bindings.rb` | check a built app's imports, hooks and SDK version |
 | `docs/` | the guide and the tour's specification |
-
-Each sample is one directory under `<language>/examples/`, one app, built by
-its directory's name. To start your own, copy a sample's directory under a
-new name, rename its `<name>.app.toml` to match, and build it by that name
-(Rust: also rename the package in its `Cargo.toml` and add it to the
-workspace members in `rust/Cargo.toml`). The build output goes to
-`<language>/build/` (not tracked by git); `-o <dir>` writes it elsewhere.
 
 ## Documentation
 
 - [docs/getting_started.md](docs/getting_started.md): from an empty PC to
   your app on the simulation, a board and the browser; the shape of an app,
-  the `.app.toml`, every language's build, troubleshooting (in Japanese:
+  the `.app.toml`, every language's project and build, troubleshooting (in Japanese:
   [docs/getting_started.ja.md](docs/getting_started.ja.md))
 - [docs/tour.md](docs/tour.md): the specification of the `tour` sample
 

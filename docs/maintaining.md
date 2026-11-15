@@ -21,35 +21,59 @@ hand-written layer of each language sits on top of them.
 | `VERSION` | the SDK version (MAJOR.MINOR.PATCH, see "Versions") |
 | `boundary/boundary.json` | the boundary as data (from fmruby-core; do not edit) |
 | `c/fmrb_boundary.h` | the C header of the boundary (from fmruby-core; do not edit) |
-| `c/fmrb_sdk_version.h` | the SDK version for C (generated) |
+| `c/fmrb_sdk_version.h` | the SDK version for C, and `FMRB_SDK_VERSION_SECTION()` (generated) |
 | `tinygo/fmrb/` | the TinyGo package (hand-written: hooks, Window, App, ...) |
-| `tinygo/fmrb/raw/` | every boundary function, record and choice for TinyGo (generated) |
+| `tinygo/fmrb/raw/` | every boundary function, record and choice for TinyGo, and `version.go`, which puts the version in the custom section (generated) |
+| `tinygo/fmrb.json` | the TinyGo target file apps build with |
 | `rust/src/lib.rs` | the Rust crate `fmrb` (package `family-mruby-sdk`; hand-written: hooks, `app!`, Window, App, ...) |
 | `rust/src/raw/` | every boundary function, record and choice for Rust (generated) |
+| `rust/.cargo/config.toml` | the build settings an app copies into its crate (the examples use it too) |
 | `zig/src/fmrb.zig` | the Zig module `fmrb` (hand-written) |
 | `zig/src/raw.zig` | every boundary function, record and choice for Zig (generated) |
+| `build.zig`, `build.zig.zon` | the Zig package (at the root: `zig fetch` takes the whole repository; `paths` keeps it to the Zig part) and `addApp` |
 | `tools/gen_bindings.rb` | generates the files marked "generated" |
 | `tools/templates/<lang>/`, `tools/lib/boundary.rb` | the templates and the generator's library |
 | `tools/check_bindings.rb` | checks the generated files, the C header and built apps |
 | `tools/version.rb` | works out the next version from the last release's boundary (`tools/test_version.rb` tests it) |
 
+## The SDK version in the .wasm
+
+Every language's library puts `VERSION` into the app's `.wasm` as a custom
+section named `fmrb.sdk` (the content is the semver string, nothing else).
+None of the languages has a way of its own to make a custom section, so the
+assembler does it, with `.section .custom_section.fmrb.sdk,"",@` (LLVM's
+wasm object writer makes such a section a custom section, and wasm-ld keeps
+it, `--strip-all` included):
+
+| Language | Where |
+|---|---|
+| TinyGo | `tinygo/fmrb/raw/version.go`: the C part of the package (cgo, built by TinyGo's clang) |
+| Rust | the `app!` macro: a `#[link_section = "fmrb.sdk"]` static in the app's own crate (from a dependency it would be dropped without LTO) |
+| Zig | `zig/src/fmrb.zig`: a top-level `comptime { asm (...) }` |
+| C | `FMRB_SDK_VERSION_SECTION();`, once in the app (`c/fmrb_sdk_version.h`) |
+
+The firmware reads it only to name it when it refuses an app (see
+"Versions"). `tools/check_bindings.rb` prints it for each app and, with
+`--examples`, fails when an example does not carry `VERSION`.
+
 ## What the build scripts do
 
-- TinyGo: from `~/toolchains/tinygo` (override with `TINYGO`), with
-  `-target=wasm-unknown -gc=conservative -opt=z -no-debug`.
+The `<language>/build.rb` scripts build this repository's examples (apps of
+your own use the language's tools, as getting_started.md shows); they copy
+the example's `.app.toml` next to the `.wasm` when there is none there.
+
+- TinyGo: `tinygo build -target=fmrb.json` (TinyGo from `~/toolchains/tinygo`
+  when it is there, else `PATH`; `TINYGO` overrides).
 - C: `zig cc -target wasm32-freestanding` from `~/toolchains/zig-*` (override
   with `ZIG`, or `CC=clang` for clang with wasm-ld), no libc, no entry point,
-  a 16 KB stack.
-- Rust: `cargo build --release --target wasm32-unknown-unknown` (install the
-  target with rustup; `CARGO` overrides the command), the release profile of
-  `rust/Cargo.toml` (size, LTO, abort on panic, stripped) and a 16 KB stack
-  (`-C link-arg=-zstack-size=16384`; without it the module starts at 17
-  pages). `no_std`, no allocator, no dependencies.
-- Zig: `zig build -Dexample=<name>` with the newest `~/toolchains/zig-*`
-  (override with `ZIG`; 0.15 or later): wasm32-freestanding, no entry point,
-  exports kept, ReleaseSmall, a 16 KB stack (`addApp` in `zig/build.zig`).
-- All of them write the `.app.toml` next to the `.wasm` with
-  `sdk_version = "<VERSION>"`.
+  a 16 KB stack. `c/examples/hello/Makefile` is the Makefile example.
+- Rust: `cargo build --release -p <name>` in `rust/` with the settings of
+  `rust/.cargo/config.toml` (the target, the release profile and a 16 KB
+  stack; without the stack size the module starts at 17 pages). `no_std`,
+  no allocator, no dependencies.
+- Zig: `zig build -Dexample=<name>` at the root with the newest
+  `~/toolchains/zig-*` (override with `ZIG`; 0.15 or later): the settings of
+  `addAppModule` in `build.zig`.
 
 Checking the whole SDK:
 
@@ -103,13 +127,13 @@ is never worked out by the tool: it is written into `VERSION` by hand when
 the boundary is declared stable. `ruby tools/test_version.rb` tests both
 rules.
 
-The build scripts write the version into the app's `.app.toml`
-(`sdk_version`). The firmware does not compare numbers: before the app
-starts, it checks every function the `.wasm` imports and refuses an app that
-imports one it does not have (or in another shape), naming the function and
-the app's `sdk_version`. The list of functions an app uses is not written in
-the `.app.toml`: the `.wasm`'s import section is that list.
-`ruby tools/check_bindings.rb --against vX.Y.Z app.wasm` tells whether an app
+The version travels in the `.wasm` (the custom section `fmrb.sdk`, above).
+The firmware does not compare numbers: before the app starts, it checks
+every function the `.wasm` imports and refuses an app that imports one it
+does not have (or in another shape), naming the function and the version
+in the app's section. The list of functions an app uses is not written
+anywhere else: the `.wasm`'s import section is that list. `ruby
+tools/check_bindings.rb --against vX.Y.Z app.wasm` tells whether an app
 would run on a firmware of that version.
 
 ## Distribution
@@ -121,8 +145,8 @@ be published to its language's registry as it is once the API is stable:
 |---|---|---|
 | C | `c/` | the headers, copied or as a git checkout |
 | TinyGo | `tinygo/` | the Go module `github.com/family-mruby/family-mruby-sdk/tinygo` |
-| Rust | `rust/` | a crate (crates.io) |
-| Zig | `zig/` | a package (`build.zig.zon`, fetched from a release archive) |
+| Rust | `rust/` | a crate (crates.io); until then a git dependency (`cargo add --git`) |
+| Zig | `build.zig.zon` at the root, `zig/` | a package fetched by git URL (`zig fetch --save git+https://...`, `#vX.Y.Z` for a tag) |
 
 Tags: a release is `vX.Y.Z` on the repository, and, because the Go module
 lives in a subdirectory, also `tinygo/vX.Y.Z` on the same commit (Go finds a
@@ -137,7 +161,7 @@ Not done yet; no tag has been made.
 1. In fmruby-core: `rake boundary:sdk SDK=<this checkout>`; here
    `ruby tools/gen_bindings.rb`.
 2. `ruby tools/version.rb` and read what it lists; `--write` sets `VERSION`
-   (and the versions in `rust/Cargo.toml` and `zig/build.zig.zon`) and
+   (and the versions in `rust/Cargo.toml` and `build.zig.zon`) and
    regenerates.
 3. `ruby tools/check_bindings.rb --examples` (builds every language's
    samples and checks them); check them on a firmware built from the

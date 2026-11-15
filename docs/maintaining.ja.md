@@ -17,30 +17,51 @@ fmruby-core のジェネレータがそれをデータ (`boundary/boundary.json`
 | `VERSION` | SDK のバージョン (MAJOR.MINOR.PATCH。「バージョン」の節) |
 | `boundary/boundary.json` | 境界のデータ (fmruby-core から。手で編集しない) |
 | `c/fmrb_boundary.h` | 境界の C のヘッダ (fmruby-core から。手で編集しない) |
-| `c/fmrb_sdk_version.h` | C 向けの SDK のバージョン (生成) |
+| `c/fmrb_sdk_version.h` | C 向けの SDK のバージョンと `FMRB_SDK_VERSION_SECTION()` (生成) |
 | `tinygo/fmrb/` | TinyGo のパッケージ (手書き: フック・Window・App など) |
-| `tinygo/fmrb/raw/` | TinyGo 向けの境界の全関数・レコード・列挙型 (生成) |
+| `tinygo/fmrb/raw/` | TinyGo 向けの境界の全関数・レコード・列挙型と、バージョンを custom section に入れる `version.go` (生成) |
+| `tinygo/fmrb.json` | アプリのビルドに使う TinyGo のターゲットファイル |
 | `rust/src/lib.rs` | Rust の crate `fmrb` (パッケージ名 `family-mruby-sdk`。手書き: フック・`app!`・Window・App など) |
 | `rust/src/raw/` | Rust 向けの境界の全関数・レコード・列挙型 (生成) |
+| `rust/.cargo/config.toml` | アプリが自分の crate にコピーするビルドの設定 (サンプルも使う) |
 | `zig/src/fmrb.zig` | Zig のモジュール `fmrb` (手書き) |
 | `zig/src/raw.zig` | Zig 向けの境界の全関数・レコード・列挙型 (生成) |
+| `build.zig`・`build.zig.zon` | Zig のパッケージ (`zig fetch` はリポジトリ全体を取るのでルートに置く。`paths` で Zig の部分だけにする) と `addApp` |
 | `tools/gen_bindings.rb` | 「生成」と書いたファイルを作る |
 | `tools/templates/<言語>/`・`tools/lib/boundary.rb` | テンプレートとジェネレータのライブラリ |
 | `tools/check_bindings.rb` | 生成物・C のヘッダ・ビルドしたアプリをチェックする |
 | `tools/version.rb` | 前回のリリースの境界と比べて次のバージョンを出す (`tools/test_version.rb` がそのテスト) |
 
+## .wasm の中の SDK のバージョン
+
+どの言語のライブラリも、`VERSION` をアプリの `.wasm` に custom section `fmrb.sdk` として入れる (中身は semver の
+文字列だけ)。どの言語にも custom section を作る仕組みが無いので、アセンブラの
+`.section .custom_section.fmrb.sdk,"",@` で作る (LLVM の wasm のオブジェクトの書き出しがこの名前の section を
+custom section にし、wasm-ld は `--strip-all` でも残す):
+
+| 言語 | 場所 |
+|---|---|
+| TinyGo | `tinygo/fmrb/raw/version.go`: パッケージの C の部分 (cgo。TinyGo の clang がビルドする) |
+| Rust | `app!` マクロ: アプリ自身の crate に置く `#[link_section = "fmrb.sdk"]` の static (依存の crate に置くと LTO なしでは落ちる) |
+| Zig | `zig/src/fmrb.zig`: トップレベルの `comptime { asm (...) }` |
+| C | `FMRB_SDK_VERSION_SECTION();` をアプリに 1 度 (`c/fmrb_sdk_version.h`) |
+
+ファームウェアは、アプリを断るときにメッセージで示すためだけに読む (「バージョン」の節)。`tools/check_bindings.rb` は
+アプリごとにこれを表示し、`--examples` ではサンプルが `VERSION` を持っていなければ落ちる。
+
 ## ビルドスクリプトの中身
 
-- TinyGo: `~/toolchains/tinygo` (`TINYGO` で変えられる)、`-target=wasm-unknown -gc=conservative -opt=z -no-debug`。
+`<言語>/build.rb` は、このリポジトリのサンプルをビルドするもの (自分のアプリは getting_started.ja.md のとおり言語の
+道具でビルドする)。`.wasm` の隣に `.app.toml` が無ければサンプルのものをコピーする。
+
+- TinyGo: `tinygo build -target=fmrb.json` (TinyGo は `~/toolchains/tinygo` にあればそれ、無ければ `PATH`。
+  `TINYGO` で変えられる)。
 - C: `~/toolchains/zig-*` の `zig cc -target wasm32-freestanding` (`ZIG` で変えられる。`CC=clang` なら clang と
-  wasm-ld)。libc なし、エントリポイントなし、スタック 16 KB。
-- Rust: `cargo build --release --target wasm32-unknown-unknown` (ターゲットは rustup でインストールする。
-  `CARGO` でコマンドを変えられる)、`rust/Cargo.toml` の release の profile (サイズ優先・LTO・panic で abort・strip) と
-  スタック 16 KB (`-C link-arg=-zstack-size=16384`。無いとメモリが 17 ページから始まる)。`no_std`、
-  アロケータなし、依存なし。
-- Zig: 最新の `~/toolchains/zig-*` (`ZIG` で変えられる。0.15 以降) で `zig build -Dexample=<名前>`。
-  wasm32-freestanding、エントリポイントなし、export を残す、ReleaseSmall、スタック 16 KB (`zig/build.zig` の `addApp`)。
-- どれも `.wasm` の隣の `.app.toml` に `sdk_version = "<VERSION>"` を書く。
+  wasm-ld)。libc なし、エントリポイントなし、スタック 16 KB。Makefile の例は `c/examples/hello/Makefile`。
+- Rust: `rust/` で `cargo build --release -p <名前>`。設定は `rust/.cargo/config.toml` (ターゲット、release の
+  profile、スタック 16 KB。スタックの指定が無いとメモリが 17 ページから始まる)。`no_std`、アロケータなし、依存なし。
+- Zig: 最新の `~/toolchains/zig-*` (`ZIG` で変えられる。0.15 以降) で、ルートで `zig build -Dexample=<名前>`。
+  設定は `build.zig` の `addAppModule`。
 
 SDK 全体のチェック:
 
@@ -89,9 +110,9 @@ ruby tools/check_bindings.rb
 出すことはなく、境界を安定と決めたときに手で `VERSION` に書く。2 つの規則は `ruby tools/test_version.rb` で
 テストする。
 
-ビルドスクリプトがバージョンをアプリの `.app.toml` (`sdk_version`) に書く。ファームウェアは番号を比べない。
+バージョンは `.wasm` に入って運ばれる (上の custom section `fmrb.sdk`)。ファームウェアは番号を比べない。
 起動の前に `.wasm` が import する関数をすべて調べ、自分に無い (またはシグネチャの違う) 関数を使うアプリを、
-その関数の名前とアプリの `sdk_version` を示して断る。使う関数の一覧は `.app.toml` に書かない (`.wasm` の
+その関数の名前とアプリの section のバージョンを示して断る。使う関数の一覧はほかのどこにも書かない (`.wasm` の
 import セクションがその一覧)。`ruby tools/check_bindings.rb --against vX.Y.Z app.wasm` で、そのバージョンの
 ファームウェアで動くかを確認できる。
 
@@ -104,8 +125,8 @@ import セクションがその一覧)。`ruby tools/check_bindings.rb --against
 |---|---|---|
 | C | `c/` | ヘッダをコピーするか git で取得する |
 | TinyGo | `tinygo/` | Go のモジュール `github.com/family-mruby/family-mruby-sdk/tinygo` |
-| Rust | `rust/` | crate (crates.io) |
-| Zig | `zig/` | パッケージ (`build.zig.zon`。リリースのアーカイブから取得する) |
+| Rust | `rust/` | crate (crates.io)。それまでは git の依存 (`cargo add --git`) |
+| Zig | ルートの `build.zig.zon`・`zig/` | git の URL で取るパッケージ (`zig fetch --save git+https://...`。タグは `#vX.Y.Z`) |
 
 タグ: リリースはリポジトリに `vX.Y.Z`。Go のモジュールはサブディレクトリにあるので、同じコミットに
 `tinygo/vX.Y.Z` も打つ (Go はサブディレクトリのモジュールのバージョンを、ディレクトリ名を前に付けたタグで探す)。
@@ -117,7 +138,7 @@ module の行と import が変わる。
 まだ行っていない (タグは打っていない)。
 
 1. fmruby-core で `rake boundary:sdk SDK=<この checkout>`、ここで `ruby tools/gen_bindings.rb`。
-2. `ruby tools/version.rb` で一覧を読む。`--write` で `VERSION` (と `rust/Cargo.toml`・`zig/build.zig.zon` の
+2. `ruby tools/version.rb` で一覧を読む。`--write` で `VERSION` (と `rust/Cargo.toml`・`build.zig.zon` の
    バージョン) を書き換えて再生成する。
 3. `ruby tools/check_bindings.rb --examples` (全言語のサンプルをビルドしてチェック)。対応する fmruby-core から
    ビルドしたファームウェアで動かす。

@@ -18,7 +18,8 @@ specification.
 
 - `.app.toml`: `app_screen_name = "<Language> tour"` (`TinyGo tour`,
   `C tour`, `Rust tour`, `Zig tour`), `language = "<language>"`, window
-  230 x 175 at (45, 30). The build script adds `sdk_version`.
+  230 x 175 at (45, 30). The SDK version is in the `.wasm` (the custom
+  section `fmrb.sdk`).
 - Everything is drawn into the window's drawer (0) inside the area, and every
   text has the paper as its background.
 - Colors (RGB332), as literal values:

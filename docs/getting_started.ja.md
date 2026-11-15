@@ -4,9 +4,10 @@
 
 この文書は、何も入っていない PC から始めて、TinyGo で書いたアプリを Family mruby の上で動かすまでの手順を
 示す。Linux のシミュレーション (sim)、WiFi で送る ESP32-P4 のボード、Web のブラウザ版の 3 か所で動かす。
-C・Rust・Zig のアプリも、ビルドスクリプトが違うだけで同じ手順になる (6 章)。題材は
-このリポジトリの `tinygo/examples/hello`。`hello` を自分のアプリの名前に読み替えれば、同じ手順で自分の
-アプリを作れる。
+アプリは新しいディレクトリに作る自分のプロジェクトで、SDK は TinyGo でライブラリを使うときのいつもの方法
+(`go get`) で取り込む。C・Rust・Zig のアプリも、それぞれの言語の道具で同じように作る (6 章)。題材は
+このリポジトリの `tinygo/examples/hello` と同じアプリ。`hello` を自分のアプリの名前に読み替えれば、同じ手順で
+自分のアプリを作れる。
 
 状態: 試験的。SDK は fmruby-core の develop に追従しており、以下の名前や形はまだ変わることがある。
 
@@ -38,60 +39,83 @@ WebAssembly (`.app.wasm`) にコンパイルし、端末ではファームウェ
 
 ## 2. 用意するもの
 
-- **TinyGo** と、それに対応する **Go**。この文書は TinyGo 0.44.0 と Go 1.26.11 で確認した。どちらも
-  配布のアーカイブから入れる (<https://tinygo.org/getting-started/install/>、<https://go.dev/dl/>)。
-- **Ruby** (3.x)。ビルドと確認のスクリプトに使う。
-- C のアプリには **Zig** (その `zig cc`。Zig 0.17.1 で確認した)。`~/toolchains/zig-<バージョン>/` に展開する
-  (または `ZIG=` で実行ファイルを指定)。clang と wasm-ld でもよい (`CC=clang`)。libc は要らない。
-- Rust のアプリには **Rust** と `wasm32-unknown-unknown` のターゲット (`rustup target add wasm32-unknown-unknown`。
-  Rust 1.97.0 で確認した)。crate は依存を持たないので、追加のダウンロードは無い。
-- Zig のアプリには **Zig** 0.15 以降 (0.17.1 で確認した)。置く場所は C と同じ。
-- **git**。
-- sim で動かすなら: Family mruby の開発用のツリー (`family-mruby` リポジトリに `fmruby-core` と
-  `fmruby-graphics-audio` を取り込んだもの) と Docker。そちらの README の「Testing Without Hardware」を参照。
-- ボードで動かすなら: ファームウェアの**開発用ビルド**が入っていて WiFi を設定した ESP32-P4 のボード
-  (設定は fmruby-core の `config/wifi.toml.example`)、それと `curl`。
+使う言語のツールチェーンを、その言語の文書のとおりにインストールし、コマンドが `PATH` で見つかるようにする:
 
-`tinygo/build.rb` はツールチェーンを 1 つのディレクトリから探す。既定は `~/toolchains`:
+| 言語 | 必要なもの | 確認したバージョン |
+|---|---|---|
+| TinyGo | **TinyGo** と、それに合う **Go** (<https://tinygo.org/getting-started/install/>・<https://go.dev/dl/>) | TinyGo 0.44.0・Go 1.26.11 |
+| Rust | **Rust** (rustup) と `wasm32-unknown-unknown` のターゲット: `rustup target add wasm32-unknown-unknown` | Rust 1.97.0 |
+| Zig | **Zig** 0.15 以降 (<https://ziglang.org/download/>) | Zig 0.17.1 |
+| C | **Zig** (`zig cc` を使う)、または **clang** と **wasm-ld** (lld)。libc は要らない | Zig 0.17.1 |
 
-```
-~/toolchains/tinygo/bin/tinygo     # TinyGo の配布物を展開したもの
-~/toolchains/go/bin/go             # Go の配布物を展開したもの
-~/toolchains/cache/                # build.rb が作る (Go と TinyGo のキャッシュ)
-```
+ほかに:
 
-ここに置くか、別のディレクトリを環境変数 `TOOLCHAINS` で、`tinygo` の実行ファイルを `TINYGO` で指定する。
-入ったかどうかは次で確認する:
+- **git** (Go・Cargo・Zig が SDK を git のリポジトリから取ってくる)。
+- sim で動かすなら: Family mruby の開発用のツリー (`family-mruby` のリポジトリに `fmruby-core` と
+  `fmruby-graphics-audio` を取ってきたもの) と Docker。そのリポジトリの README の「Testing Without Hardware」を参照。
+- ボードで動かすなら: ファームウェアの**開発用ビルド**が入り、WiFi を設定した ESP32-P4 のボード
+  (fmruby-core の `config/wifi.toml.example`) と `curl`。
+
+TinyGo のツールチェーンの確認:
 
 ```
-~/toolchains/tinygo/bin/tinygo version
-~/toolchains/go/bin/go version
+tinygo version
+go version
 ```
 
-## 3. SDK を取ってくる
+## 3. プロジェクトを作る
+
+TinyGo のアプリは、それ自身が 1 つの Go のモジュール。モジュールを作り、SDK の TinyGo のモジュールを取り込む:
 
 ```
-git clone https://github.com/family-mruby/family-mruby-sdk.git
-cd family-mruby-sdk
+mkdir hello && cd hello
+go mod init example.com/hello
+go get github.com/family-mruby/family-mruby-sdk/tinygo
 ```
 
-| パス | 中身 |
+SDK には、Family mruby のアプリを作るための TinyGo の設定がターゲットファイル `fmrb.json` として入っている。
+取ってきたモジュールからプロジェクトにコピーする:
+
+```
+cp "$(go list -m -f '{{.Dir}}' github.com/family-mruby/family-mruby-sdk/tinygo)/fmrb.json" .
+```
+
+中身は数行で、`wasm-unknown` のターゲット (WASI なし)、conservative の GC (メモリを解放する)、デバッグ情報なし。
+サイズの最適化は TinyGo の既定のまま:
+
+```json
+{
+	"inherits": ["wasm-unknown"],
+	"gc": "conservative",
+	"ldflags": ["--strip-debug"]
+}
+```
+
+ディレクトリに `main.go` (4 章) と `hello.app.toml` (5 章) を書いて、ビルドする:
+
+```
+tinygo build -target=fmrb.json -o hello.app.wasm .
+```
+
+ビルドはこれだけで、`hello.app.wasm` と `hello.app.toml` がアプリになる。SDK のバージョンは自動で `.wasm` に
+入る (8 章の「SDK のバージョン」)。変更のたびに同じコマンドでビルドし直す。
+
+モジュールの中身:
+
+| パッケージ | 中身 |
 |---|---|
-| `tinygo/fmrb/` | TinyGo のパッケージ: フック、`Window`、`App`、音、ファイル、ログ |
-| `tinygo/fmrb/raw/` | 境界の全部の関数・レコード・列挙型 (生成物) |
-| `tinygo/examples/` | サンプルアプリ (`hello`・`tour`・`bounce`)。1 ディレクトリが 1 アプリで、`main.go` と `.app.toml` を置く |
-| `tinygo/build.rb` | サンプル 1 つをビルドして `<名前>.app.wasm` とその `.app.toml` を作る |
-| `c/` | C のヘッダ (`fmrb_boundary.h`・`fmrb_sdk_version.h`)、`build.rb`、`examples/tour` |
-| `rust/` | Rust の crate `fmrb` (`src/lib.rs`。`src/raw/` は生成物)、`build.rb`、`examples/hello`・`examples/tour` |
-| `zig/` | Zig のパッケージとモジュール `fmrb` (`src/fmrb.zig`。`src/raw.zig` は生成物)、`build.zig`、`build.rb`、`examples/hello`・`examples/tour` |
-| `tools/check_bindings.rb` | 生成物とアプリの import を境界と突き合わせてチェックする |
-| `docs/tour.md` | サンプル `tour` の仕様 (どの言語でも同じアプリ) |
+| `github.com/family-mruby/family-mruby-sdk/tinygo/fmrb` | フック、`Window`、`App`、音、ファイル、ログ |
+| `github.com/family-mruby/family-mruby-sdk/tinygo/fmrb/raw` | 境界のすべての関数・レコード・選択肢 (生成物) |
+
+SDK のリポジトリ (<https://github.com/family-mruby/family-mruby-sdk>) には言語ごとのサンプル
+(`<言語>/examples/`) もあり、主な機能を 5 ページで見せる `tour` もそこにある。アプリを書くのにリポジトリの
+checkout は要らない。
 
 ## 4. アプリの形
 
-アプリは `tinygo/examples/<名前>/main.go` に置く Go の `main` パッケージ。型を 1 つ作り、その値を `init` から
-`fmrb.SetApp` で登録し、使いたいフックをメソッドとして書く。書かなかったフックは呼ばれないだけ。
-`tinygo/examples/hello/main.go` の全体:
+アプリは Go の `main` パッケージ。型を 1 つ作り、その値を `init` から `fmrb.SetApp` で登録し、使いたいフックを
+メソッドとして書く。書かなかったフックは呼ばれないだけ。`main.go` の全体 (SDK の
+`tinygo/examples/hello/main.go` と同じ):
 
 ```go
 package main
@@ -148,7 +172,7 @@ func main() {}
 
 `main` は空のままにする。フックを呼ぶのはファームウェアで、アプリ側にループは無い。
 
-`tinygo/examples/tour` はもう一歩進んだサンプルで、図形・日本語の文字・画像・音・ファイル・時計・アプリの
+SDK の `tinygo/examples/tour` はもう一歩進んだサンプルで、図形・日本語の文字・画像・音・ファイル・時計・アプリの
 情報を 5 ページで見せる。SDK のどの言語でも同じアプリ (C は `c/examples/tour/app.c`。仕様は `docs/tour.md`) なので、
 言語ごとの書き方を比べる場所にもなる。`fmrb` パッケージがラップしていないものは `fmrb/raw` にある (生成物。境界の
 関数 1 つに Go の関数 1 つ。例 `raw.GfxFillArc`)。
@@ -234,7 +258,7 @@ if data, ok := fmrb.FileRead("/home/hello.txt"); ok { ... }
 ## 5. .app.toml
 
 `hello.app.wasm` の隣に、同じ名前の `hello.app.toml` を置く。ランチャーに出す名前と Window の位置を
-決めるファイルで、ソースと一緒に管理するとよい。`hello` では `tinygo/examples/hello/hello.app.toml`:
+決めるファイル。`hello` では:
 
 ```toml
 app_screen_name = "TinyGo hello"
@@ -268,65 +292,65 @@ default_window_pos_y = 50
 | `task_stack_kb` | アプリのタスクの C スタック (KB)。wasm のアプリの既定は 24 KB | |
 | `icon` | ランチャーのアイコン。先頭の `/` なしのパス (例 `"app/mine/hello.icon"`) | 文字の `W` |
 | `launcher_visible` | `false`: ランチャーに出さず、パス指定の起動だけにする | 出す |
-| `sdk_version` | アプリをビルドした SDK のバージョン。ビルドスクリプトが書く。ファームウェアはこの番号を比べない。ファームウェアに無い関数を使うアプリを断り、そのメッセージにこのバージョンを示す (8 章) | なし |
 
 - **カテゴリは `/app` の下のディレクトリで決まる** (`/app/tinygo/`・`/app/mine/` など。どのディレクトリでも
   よい)。ランチャーは全カテゴリのアプリを名前順に並べて出す (端末の設定でカテゴリごと隠すこともできる)。
 - エンジンは拡張子 (`.wasm`) で決まる。`bounce.app.toml` にある `language = "tinygo"` は人向けのメモで、
   ファームウェアは読まない。
+- SDK のバージョンを書くキーは無い。SDK が `.wasm` に入れる (8 章の「SDK のバージョン」)。
 - アイコンは 12x12 の文字の格子 (`.icon`) と、そこから作る BMP を隣に置く (fmruby-core の
   `tools/gen_icon_bmp.rb`)。書式は fmruby-core の `flash/app/` にある `.icon` をコピーするのが早い。
 
-## 6. ビルド
+## 6. Rust・Zig・C
 
-```
-ruby tinygo/build.rb hello
-```
-
-```
-.../tinygo/bin/tinygo build -target=wasm-unknown -gc=conservative -opt=z -no-debug -o .../tinygo/build/hello.app.wasm ./examples/hello
-.../tinygo/build/hello.app.wasm (7538 bytes)
-.../tinygo/build/hello.app.toml (sdk_version = "0.1.0")
-```
-
-- 出力先は `tinygo/build/` (git の管理外)。`-o <ディレクトリかファイル>` で別の場所に出せる。たとえば
-  fmruby-core の `flash/app/tinygo` に直接出せる。
-- フラグは SDK が固定している: `wasm-unknown` (WASI なし)、conservative の GC (メモリを解放する)、
-  サイズ優先の最適化、デバッグ情報なし。
-- サンプルの `hello.app.toml` が `.wasm` の隣に、`sdk_version` を入れて書かれる (既にあれば、ほかの行は
-  そのまま残す)。
-- 任意: アプリの import とフックを境界と突き合わせてチェックする:
-
-  ```
-  ruby tools/check_bindings.rb tinygo/build/hello.app.wasm
-  ruby tools/check_bindings.rb --against v0.1.0 tinygo/build/hello.app.wasm   # リリースしたバージョンの境界と
-  ```
-
-  見つけた import とフックを表示し、最後に `ok` と出る。
-
-### C
-
-```
-ruby c/build.rb tour        # -> c/build/tour.app.wasm と tour.app.toml
-```
-
-C のアプリは `fmrb_boundary.h` を include して C の関数を直接呼び (`fmrb_gfx_fill_rect(0, x, y, w, h, color)`。
-描画先 0 が Window)、使うフック (`void on_create(void)`・`int32_t on_update(void)`・
-`void on_event(const fmrb_app_event_t *ev)` など) を定義し、どれか 1 つのファイルに `FMRB_EVENT_BUFFER();` と
-書く。libc は無い。ビルドは `zig cc -target wasm32-freestanding -nostdlib -Os -Wl,--no-entry
--Wl,-z,stack-size=16384`。コンパイラが `memcpy`・`memset` を求めたら自分で定義する (`c/examples/tour/app.c` が
-そうしている)。文字列はポインタと長さで渡し、NUL 終端ではない。
+どの言語も、その言語でいつも使う方法で SDK を取り込む。アプリはどれも同じで、`<名前>.app.wasm` の隣に
+`<名前>.app.toml` (5 章) を置き、同じフックをその言語の名前で書く。
 
 ### Rust
 
+SDK は crate `family-mruby-sdk` (ライブラリの名前は `fmrb`)。crates.io に出すまでは、Cargo が git の
+リポジトリから取ってくる:
+
 ```
-ruby rust/build.rb hello    # -> rust/build/hello.app.wasm と hello.app.toml
+cargo new --lib hello && cd hello
+cargo add --git https://github.com/family-mruby/family-mruby-sdk family-mruby-sdk
 ```
 
-アプリは `no_std` で `cdylib` のライブラリの crate で、SDK の crate に依存する
-(`fmrb = { package = "family-mruby-sdk", path = ... }`。`rust/examples/hello/Cargo.toml` を参照)。`fmrb::App`
-(フックはどれも既定で何もしない) と `Default` を実装した型を作り、`fmrb::app!(Hello);` で 1 度だけ名前を
-渡す。このマクロがフックとイベントバッファを export する。
+(公開した後は `cargo add family-mruby-sdk`。) アプリは `cdylib` のライブラリ。`Cargo.toml` に足す:
+
+```toml
+[lib]
+crate-type = ["cdylib"]
+```
+
+ビルドの設定はプロジェクトの `.cargo/config.toml` に書く (SDK の `rust/.cargo/config.toml` と同じもの):
+
+```toml
+[build]
+target = "wasm32-unknown-unknown"
+
+[target.wasm32-unknown-unknown]
+# a 16 KB stack: without it the linker reserves 1 MiB and the app starts
+# with 17 pages (64 KB each) of memory
+rustflags = ["-C", "link-arg=-zstack-size=16384"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+codegen-units = 1
+strip = true
+```
+
+`src/lib.rs` (`cargo new` が書いたものは置き換える) と `hello.app.toml` を書いて:
+
+```
+cargo build --release
+cp target/wasm32-unknown-unknown/release/hello.wasm hello.app.wasm
+```
+
+アプリは `no_std`。`fmrb::App` (フックはどれも既定で何もしない) と `Default` を実装した型を作り、
+`fmrb::app!(Hello);` で 1 度だけ名前を渡す。このマクロがフック、イベントバッファ、SDK のバージョンを export する。
 
 ```rust
 #![no_std]
@@ -339,7 +363,8 @@ impl fmrb::App for Hello {
     fn on_update(&mut self) -> i32 {
         self.count += 1;
         WINDOW.fill_rect(0, 0, WINDOW.area_width(), WINDOW.area_height(), 0xFF);
-        WINDOW.draw_text(4, 4, Text::<32>::from("count ").int(self.count).as_str(), 0x00);
+        WINDOW.draw_text(4, 4, "Hello, Family mruby!", 0x00);
+        WINDOW.draw_text(4, 16, Text::<32>::from("count ").int(self.count).as_str(), 0x00);
         WINDOW.present();
         100
     }
@@ -355,17 +380,44 @@ fmrb::app!(Hello);
 
 アロケータは使わない。ファームウェアが返す文字列 (`fmrb::app::name()` など) は `Text<N>` (固定の大きさの
 バッファ) で受け取る。`Text` は描く行を組み立てるのにも使える (`push`・`int`・`core::fmt::Write`)。crate は
-トラップする panic handler を持つ (自分のものを使うなら既定の feature `panic-handler` を外す)。
-`rust/build.rb` は `cargo build --release --target wasm32-unknown-unknown` を、`rust/Cargo.toml` の release の
-profile (サイズ優先・LTO・panic で abort・strip) と `-C link-arg=-zstack-size=16384` で流す。スタックの大きさを
-指定しないとリンカが 1 MiB を取り、アプリのメモリが 17 ページから始まる。自分の crate では同じ profile を
-`Cargo.toml` に、フラグを `RUSTFLAGS` (か `.cargo/config.toml`) に書く。ほかの関数は `fmrb::raw` にある (`unsafe`)。
+トラップする panic handler を持つ (自分のものを使うなら既定の feature `panic-handler` を外す)。ほかの関数は
+`fmrb::raw` にある (`unsafe`)。もっと大きい例は SDK の `rust/examples/hello` と `rust/examples/tour`。
 
 ### Zig
 
+SDK は Zig のパッケージ (`family_mruby_sdk`) で、モジュール `fmrb` と、設定を持つビルドの関数 `addApp` が入っている。
+プロジェクトを作ってパッケージを取ってくる:
+
 ```
-ruby zig/build.rb hello     # -> zig/build/hello.app.wasm と hello.app.toml
+mkdir hello && cd hello
+zig init --minimal
+zig fetch --save git+https://github.com/family-mruby/family-mruby-sdk
 ```
+
+`zig init` が書いた `build.zig` を次で置き換える:
+
+```zig
+const std = @import("std");
+const fmrb_sdk = @import("family_mruby_sdk");
+
+pub fn build(b: *std.Build) void {
+    const app = fmrb_sdk.addApp(b, .{
+        .name = "hello",
+        .root_source_file = b.path("src/main.zig"),
+        .app_toml = b.path("hello.app.toml"),
+    });
+    b.installArtifact(app);
+}
+```
+
+`src/main.zig` と `hello.app.toml` を書いて:
+
+```
+zig build
+```
+
+`zig-out/bin/hello.app.wasm` ができ、隣に `hello.app.toml` がコピーされる。`addApp` の設定は
+`wasm32-freestanding`、エントリポイントなし、export を残す、`ReleaseSmall`、strip、16 KB のスタック。
 
 アプリはモジュール `fmrb` を import するルートのファイルで、全部のフィールドに既定値のある struct に、使うフックを
 メソッド (`onCreate`・`onUpdate`・`onEvent` など) として書き、`fmrb.exportApp` で export する:
@@ -396,11 +448,58 @@ comptime {
 ```
 
 文字列を返す関数は、渡したバッファに書いてスライスを返す (`fmrb.app.name(&buf)`)。描く行は
-`std.fmt.bufPrint` で組み立てる。`zig/build.rb` は `zig build -Dexample=<名前>` を流す。設定は `zig/build.zig` の
-`addApp` にある: `wasm32-freestanding`、エントリポイントなし、export を残す (`rdynamic`)、`ReleaseSmall`、strip、
-16 KB のスタック。自分のプロジェクトでは、このリポジトリを `build.zig.zon` の依存に足し
-(`zig fetch --save <アーカイブの URL>`)、`b.dependency("family_mruby_sdk", .{}).module("fmrb")` でモジュールを取る。
-ほかの関数は `fmrb.raw` にある。
+`std.fmt.bufPrint` で組み立てる。ほかの関数は `fmrb.raw` にある。もっと大きい例は SDK の `zig/examples/hello` と
+`zig/examples/tour`。
+
+### C
+
+SDK はリポジトリの `c/` にある 2 つのヘッダ、`fmrb_boundary.h` (すべての関数・レコード・フック) と
+`fmrb_sdk_version.h`。プロジェクトにコピーするか、リポジトリを git の submodule にする:
+
+```
+mkdir hello && cd hello
+curl -O https://raw.githubusercontent.com/family-mruby/family-mruby-sdk/main/c/fmrb_boundary.h
+curl -O https://raw.githubusercontent.com/family-mruby/family-mruby-sdk/main/c/fmrb_sdk_version.h
+```
+
+C のアプリは両方を include して C の関数を直接呼び (`fmrb_gfx_fill_rect(0, x, y, w, h, color)`。描画先 0 が
+Window)、使うフック (`void on_create(void)`・`int32_t on_update(void)`・`void on_event(const fmrb_app_event_t *ev)`
+など) を定義し、どれか 1 つのファイルに次の 2 行を書く:
+
+```c
+#include "fmrb_boundary.h"
+#include "fmrb_sdk_version.h"
+
+FMRB_EVENT_BUFFER();         /* the place for on_event's record */
+FMRB_SDK_VERSION_SECTION();  /* the SDK version, into the .wasm */
+```
+
+`hello` の C 版の全体は SDK の `c/examples/hello/hello.c`。ビルドは `zig cc` か clang の 1 行:
+
+```
+zig cc -target wasm32-freestanding -nostdlib -Os -I. -Wl,--no-entry -Wl,-z,stack-size=16384 -Wl,--strip-all hello.c -o hello.app.wasm
+clang --target=wasm32 -nostdlib -Os -I. -Wl,--no-entry -Wl,-z,stack-size=16384 -Wl,--strip-all hello.c -o hello.app.wasm
+```
+
+libc は無く (`-nostdlib`)、エントリポイントも無い (フックを呼ぶのはファームウェア)。コンパイラが `memcpy`・`memset`
+を求めたら自分で定義する (`c/examples/tour/app.c` がそうしている)。文字列はポインタと長さで渡し、NUL 終端では
+ない。ファイルが増えたら小さな Makefile で (SDK の `c/examples/hello/Makefile` と同じ形。`FMRB_SDK` はヘッダの
+場所で、submodule なら `family-mruby-sdk/c` など。SDK の中のものは `../..`):
+
+```make
+FMRB_SDK ?= .
+APP      ?= hello
+SRCS     ?= $(wildcard *.c)
+CC       := zig cc
+TARGET   ?= -target wasm32-freestanding
+CFLAGS   ?= -Os
+WASMFLAGS = $(TARGET) -nostdlib -I$(FMRB_SDK) -Wl,--no-entry -Wl,-z,stack-size=16384 -Wl,--strip-all
+
+$(APP).app.wasm: $(SRCS) $(FMRB_SDK)/fmrb_boundary.h $(FMRB_SDK)/fmrb_sdk_version.h
+	$(CC) $(WASMFLAGS) $(CFLAGS) $(SRCS) -o $@
+```
+
+(clang なら `make CC=clang TARGET=--target=wasm32`。)
 
 ## 7. 動かす
 
@@ -409,10 +508,11 @@ comptime {
 Family mruby の開発用のツリーで行う (以下の `<fmruby-core>` はその中の `fmruby-core` ディレクトリ)。
 
 1. sim の `/app` にアプリを置く。Linux では `/app` は fmruby-core の `flash/app` ディレクトリそのもので、
-   置けばそのまま読まれる (イメージの作り直しは要らない)。
+   置けばそのまま読まれる (イメージの作り直しは要らない)。その下のディレクトリがカテゴリになる。ここでは `mine`:
 
    ```
-   ruby tinygo/build.rb hello -o <fmruby-core>/flash/app/tinygo
+   mkdir -p <fmruby-core>/flash/app/mine
+   cp hello.app.wasm hello.app.toml <fmruby-core>/flash/app/mine/
    ```
 
 2. fmruby-core と fmruby-graphics-audio を Linux 向けにビルドし (それぞれで `rake build:linux`。直前が
@@ -423,7 +523,7 @@ Family mruby の開発用のツリーで行う (以下の `<fmruby-core>` はそ
    - パスを指定して: デバッグ用のクライアントを使う (Python の `msgpack` が要る)。
 
      ```
-     python3 <fmruby-core>/tools/debug/fmrb_dbg_client.py localhost spawn path=/app/tinygo/hello.app.wasm
+     python3 <fmruby-core>/tools/debug/fmrb_dbg_client.py localhost spawn path=/app/mine/hello.app.wasm
      ```
 
 4. キーを押す。押した文字が `key` の行に出る。スペースでカウンタが 0 に戻り、`q` でアプリが閉じる
@@ -438,8 +538,8 @@ Family mruby の開発用のツリーで行う (以下の `<fmruby-core>` はそ
 
 ```
 curl -X POST "http://<device-ip>/fs/mkdir?path=/app/mine"
-curl -T tinygo/build/hello.app.wasm "http://<device-ip>/fs/put?path=/app/mine/hello.app.wasm"
-curl -T tinygo/build/hello.app.toml "http://<device-ip>/fs/put?path=/app/mine/hello.app.toml"
+curl -T hello.app.wasm "http://<device-ip>/fs/put?path=/app/mine/hello.app.wasm"
+curl -T hello.app.toml "http://<device-ip>/fs/put?path=/app/mine/hello.app.toml"
 curl -X POST "http://<device-ip>/app/launch?path=/app/mine/hello.app.wasm"
 ```
 
@@ -452,7 +552,7 @@ curl の代わりに、Family mruby のリポジトリの `tools/fmrb_rd_fs.rb` 
 `tools/fmrb_rd_launch.rb` も使える:
 
 ```
-ruby tools/fmrb_rd_fs.rb <device-ip> put tinygo/build/hello.app.wasm /app/mine/hello.app.wasm
+ruby tools/fmrb_rd_fs.rb <device-ip> put hello.app.wasm /app/mine/hello.app.wasm
 ruby tools/fmrb_rd_launch.rb <device-ip> /app/mine/hello.app.wasm
 ```
 
@@ -470,7 +570,7 @@ ruby tools/fmrb_rd_launch.rb <device-ip> /app/mine/hello.app.wasm
 自分のアプリを動かすには:
 
 1. アプリの 2 つのファイルを、アプリの名前のフォルダに入れる: `hello/hello.app.wasm` と `hello/hello.app.toml`
-   (ビルドが両方を `tinygo/build/` に書くので、フォルダにコピーする)。
+   (送って困るものが無ければプロジェクトのディレクトリのままでよい。Zig の `zig-out/bin` には両方がある)。
 2. ページを開き、デスクトップが出るまで待つ。画面の下の **Your files** の領域で **Add Folder...** からフォルダを
    選ぶか、フォルダをページのどこかにドロップする。一番上に `<名前>.app.toml` があるフォルダは
    `/app/usr/<フォルダ>/` (自分で足すアプリの場所) に入る。それ以外は `/home` に入る。**Files...** で
@@ -493,7 +593,7 @@ ruby tools/fmrb_rd_launch.rb <device-ip> /app/mine/hello.app.wasm
 | `No on_create, on_update or on_event in ...` | 3 つのどれも export していないので、読み込みの時点で断られた。`fmrb` パッケージでビルドした TinyGo のアプリは必ず export するので、C などほかの言語向けの話 |
 | `wasm: [<名前>] <フック> takes N and returns M values, expected ...` | フックのシグネチャが違う (古い SDK でビルドしたアプリ)。今の SDK でビルドし直す |
 | `on_event needs fmrb_event_buffer (the SDK's event buffer) or a stack pointer global (__stack_pointer) for its record` | 古い SDK でビルドしたアプリで、ファームウェアがイベントのレコードを置く場所が無い (最適化でスタックポインタが消えた小さいアプリ)。今の SDK でビルドし直す。`fmrb` パッケージは、ファームウェアがレコードを書き込む置き場 `fmrb_event_buffer` を export する (C のアプリはどれか 1 つのファイルに `FMRB_EVENT_BUFFER();` と書く) |
-| `imports fmrb.<名前>, which this firmware does not have ...: the app was built with SDK X.Y.Z, newer than this firmware; update the firmware` | ファームウェアに無い関数をアプリが使っている (SDK がファームウェアより新しい)。ファームウェアを更新するか、ファームウェアに合うバージョンの SDK でビルドする。`in another shape than this firmware's` は、シグネチャの変わった関数について同じこと |
+| `imports fmrb.<名前>, which this firmware does not have ...: the app was built with SDK X.Y.Z, newer than this firmware; update the firmware` | ファームウェアに無い関数をアプリが使っている (SDK がファームウェアより新しい)。ファームウェアを更新するか、ファームウェアに合うバージョンの SDK でビルドする。`in another shape than this firmware's` は、シグネチャの変わった関数について同じこと。バージョンの代わりに `built with a newer SDK` と出るのは、`.wasm` がバージョンを持っていないとき (「SDK のバージョン」を参照) |
 | `imports <モジュール>.<名前>, but the firmware gives only "fmrb" functions` | WASI や libc の関数を import している (C の `printf` など)。使わずにビルドする |
 | `... did not load: ...` / `... did not start: ...` | WAMR がモジュールを受け付けなかった (wasm でない、WAMR に無い機能、メモリ不足) |
 | `wasm apps are not in this build` | その端末には WAMR が入っていない (ESP32-S3、または wasm のアプリに対応する前のネイティブ版・ブラウザ版) |
@@ -512,6 +612,13 @@ wasm: [TinyGo hello] ended (memory 2 pages)
 wasm: runtime ended (pool high mark N of 261608 bytes)                       # the last wasm app
 ```
 
+**SDK のバージョン。** SDK のライブラリは、どの言語でも自分のバージョンを `.wasm` の custom section
+`fmrb.sdk` に入れる (中身は `0.1.0` のようなバージョンの文字列)。アプリの側ですることは無い。TinyGo のパッケージ、
+Rust の `app!` マクロ、Zig のモジュールは自動で入れ、C のアプリは `FMRB_SDK_VERSION_SECTION();` で入れる。
+ファームウェアは番号を比べない。ファームウェアに無い関数を import するアプリを断るときに、そのメッセージで
+示すためだけに読む。中身は `wasm-objdump -s -j fmrb.sdk hello.app.wasm` (wabt) か、SDK の checkout で
+`ruby tools/check_bindings.rb hello.app.wasm` (import のチェックもする) で見られる。
+
 **メモリ。** アプリのリニアメモリは 64 KB のページ単位。TinyGo のアプリは 2 ページで始まり、確保に応じて
 増える。上限は `loaded` の行の `up to N` で、アプリのメモリプールの空きから 64 KB を引いた分。大きい
 `FileRead` や大きなスライスもここから取る。足りなくなると Go のランタイムが panic する (上のトラップに
@@ -524,7 +631,7 @@ wasm: runtime ended (pool high mark N of 261608 bytes)                       # t
   `raw` を直接呼ぶ。
 - フックとレコードの形は暫定で、ファームウェアに合わせて変わることがある。
 - Rust と Zig: 手書きの層がラップするのは TinyGo と同じよく使う部分。どちらもアロケータを使わない (文字列は固定の
-  バッファで受け取る)。Rust の crate と Zig のパッケージは、crates.io やリリースのアーカイブにはまだ出していない
-  ([maintaining.ja.md](maintaining.ja.md) の「配布」)。
+  バッファで受け取る)。Rust の crate は crates.io にまだ出しておらず、リリースのタグもまだ無い。Go・Cargo・Zig は
+  git のリポジトリの既定のブランチから SDK を取ってくる ([maintaining.ja.md](maintaining.ja.md) の「配布」)。
 - wasm のアプリは ESP32-S3 のボードでは動かない (1 章)。
 - 開発用のリモート操作には認証が無く、リリースビルドにはまだ入っていない (7 章の b)。

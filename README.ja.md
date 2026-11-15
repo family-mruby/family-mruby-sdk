@@ -11,48 +11,45 @@ Window の中に描く。
 
 ## 対応言語
 
-| 言語 | ディレクトリ | サンプル | ツールチェーン |
+| 言語 | SDK の取り込み | ビルド | サンプル |
 |---|---|---|---|
-| C | `c/` | `tour` | Zig の `zig cc` (または clang と wasm-ld)。libc なし |
-| TinyGo | `tinygo/` | `hello`・`tour`・`bounce` | TinyGo と Go |
-| Rust | `rust/` | `hello`・`tour` | Rust と `wasm32-unknown-unknown` のターゲット。`no_std` |
-| Zig | `zig/` | `hello`・`tour` | Zig 0.15 以降 |
+| TinyGo | `go get github.com/family-mruby/family-mruby-sdk/tinygo` | `tinygo build -target=fmrb.json` | `hello`・`tour`・`bounce` |
+| Rust | `cargo add --git https://github.com/family-mruby/family-mruby-sdk family-mruby-sdk` | `cargo build --release` | `hello`・`tour` |
+| Zig | `zig fetch --save git+https://github.com/family-mruby/family-mruby-sdk` | `zig build` (SDK の `addApp`) | `hello`・`tour` |
+| C | `c/` の 2 つのヘッダ (コピーか git の submodule) | `zig cc` か clang の 1 行 (か小さな Makefile) | `hello`・`tour` |
 
 どの言語からも同じ関数 (描画、文字、画像、音、ファイル、ログ、時計、アプリの情報、入力) を使える。
 ファームウェア自身の定義から生成したバインディングの上に、その言語らしく書ける手書きの層が載っている。
+SDK のバージョンは `.wasm` に入る (custom section `fmrb.sdk`)。新しい SDK で作ったアプリをファームウェアが
+断るとき、メッセージにそのバージョンを示す。
 
-## クイックスタート
+## クイックスタート (TinyGo)
 
-Ruby 3.x と、使う言語のツールチェーンが必要 (バージョンとインストール先は
-[入門ガイドの 2 章](docs/getting_started.ja.md#2-用意するもの))。
-
-```
-git clone https://github.com/family-mruby/family-mruby-sdk.git
-cd family-mruby-sdk
-ruby tinygo/build.rb hello      # -> tinygo/build/hello.app.wasm と hello.app.toml
-```
-
-ほかの言語も同じ形:
+TinyGo とそれに合う Go が `PATH` にあること (バージョンは [入門ガイドの 2 章](docs/getting_started.ja.md#2-用意するもの))。
 
 ```
-ruby rust/build.rb hello        # -> rust/build/hello.app.wasm (+ .app.toml)
-ruby zig/build.rb hello         # -> zig/build/hello.app.wasm (+ .app.toml)
-ruby c/build.rb tour            # -> c/build/tour.app.wasm (+ .app.toml)
+mkdir hello && cd hello
+go mod init example.com/hello
+go get github.com/family-mruby/family-mruby-sdk/tinygo
+cp "$(go list -m -f '{{.Dir}}' github.com/family-mruby/family-mruby-sdk/tinygo)/fmrb.json" .
+# main.go と hello.app.toml を書く (入門ガイドの 4 章と 5 章)
+tinygo build -target=fmrb.json -o hello.app.wasm .
 ```
+
+Rust・Zig・C は [入門ガイドの 6 章](docs/getting_started.ja.md#6-rustzigc)。
 
 アプリは `<名前>.app.wasm` と `<名前>.app.toml` (ランチャーに出す名前と Window の設定) の 2 つのファイル。
 両方を端末の `/app` の下のディレクトリに置いて起動する:
 
-- **Linux のシミュレーション (sim)**: sim のアプリのディレクトリに直接ビルドし
-  (`ruby tinygo/build.rb hello -o <fmruby-core>/flash/app/tinygo`)、sim を起動してランチャーから
-  `TinyGo hello` を起動する。
+- **Linux のシミュレーション (sim)**: sim のアプリのディレクトリの下 (`<fmruby-core>/flash/app/mine/`) に
+  コピーし、sim を起動してランチャーから `TinyGo hello` を起動する。
 - **ESP32-P4 のボード** (M5Stack Tab5 など。ファームウェアの開発用ビルドが必要): WiFi でファイルを送って
   起動する。書き込み直しは要らない:
 
   ```
   curl -X POST "http://<device-ip>/fs/mkdir?path=/app/mine"
-  curl -T tinygo/build/hello.app.wasm "http://<device-ip>/fs/put?path=/app/mine/hello.app.wasm"
-  curl -T tinygo/build/hello.app.toml "http://<device-ip>/fs/put?path=/app/mine/hello.app.toml"
+  curl -T hello.app.wasm "http://<device-ip>/fs/put?path=/app/mine/hello.app.wasm"
+  curl -T hello.app.toml "http://<device-ip>/fs/put?path=/app/mine/hello.app.toml"
   curl -X POST "http://<device-ip>/app/launch?path=/app/mine/hello.app.wasm"
   ```
 
@@ -62,50 +59,46 @@ ruby c/build.rb tour            # -> c/build/tour.app.wasm (+ .app.toml)
 wasm のアプリは ESP32-S3 のボード (Retro) では動かない。詳しい手順、アプリの形、フック、トラブルシューティングは
 入門ガイドにある。
 
-アプリがファームウェアにある関数だけを使っているかのチェック:
-
-```
-ruby tools/check_bindings.rb tinygo/build/hello.app.wasm
-```
-
 ## サンプル
 
 どの言語にも `tour` がある。hello に主な機能 (図形、文字と日本語、画像、音、ファイル、ログ、時計、
 アプリの情報、キーとポインタの入力) を一通り足したもので、どの言語でも内容と画面が同じなので書き方を
-比べられる。TinyGo・Rust・Zig にはほかに `hello` (入門ガイドで作るいちばん小さいアプリ)、TinyGo には
-`bounce` (小さなアニメーション) がある。
+比べられる。どの言語にも `hello` (入門ガイドで作るいちばん小さいアプリ) があり、TinyGo には `bounce`
+(小さなアニメーション) もある。
 
 | tour | .wasm のサイズ (SDK 0.1.0) |
 |---|---|
-| TinyGo | 16,956 B |
-| Rust | 11,016 B |
-| Zig | 10,639 B |
-| C | 9,143 B |
+| TinyGo | 16,972 B |
+| Rust | 11,036 B |
+| Zig | 10,655 B |
+| C | 9,159 B |
+
+このリポジトリの checkout では、サンプルは SDK のメンテナが使うスクリプトでビルドする (Ruby 3.x。出力先は
+`<言語>/build/`、または `-o <ディレクトリ>`):
+
+```
+ruby tinygo/build.rb hello
+ruby rust/build.rb tour
+ruby zig/build.rb tour
+ruby c/build.rb hello
+```
 
 ## リポジトリの構成
 
-| パス | 用途 |
+| パス | 中身 |
 |---|---|
-| `c/fmrb_boundary.h` | C のヘッダ: 全関数・レコード・フック |
-| `c/build.rb`・`c/examples/` | C のアプリのビルド、C のサンプル |
-| `tinygo/fmrb/` | import する TinyGo のパッケージ (`fmrb`。ほかの関数は `fmrb/raw`) |
-| `tinygo/build.rb`・`tinygo/examples/` | TinyGo のアプリのビルド、TinyGo のサンプル |
-| `rust/` | Rust の crate `fmrb` (パッケージ名 `family-mruby-sdk`。ほかの関数は `fmrb::raw`) |
-| `rust/build.rb`・`rust/examples/` | Rust のアプリのビルド、Rust のサンプル |
-| `zig/` | Zig のパッケージとモジュール `fmrb` (ほかの関数は `fmrb.raw`) |
-| `zig/build.rb`・`zig/examples/` | Zig のアプリのビルド、Zig のサンプル |
-| `tools/check_bindings.rb` | ビルドしたアプリの import とフックのチェック |
+| `tinygo/` | Go のモジュール `github.com/family-mruby/family-mruby-sdk/tinygo`: パッケージ `fmrb` (ほかの関数は `fmrb/raw`)、ターゲットファイル `fmrb.json`、サンプル |
+| `rust/` | crate `family-mruby-sdk` (ライブラリ名 `fmrb`。ほかの関数は `fmrb::raw`)、アプリにコピーする `.cargo/config.toml`、サンプル |
+| `build.zig`・`build.zig.zon`・`zig/` | Zig のパッケージ `family_mruby_sdk` (`zig fetch` はリポジトリ全体を取るのでルートに置く): モジュール `fmrb` は `zig/src/` (ほかの関数は `fmrb.raw`)、`addApp`。サンプルは `zig/examples/` |
+| `c/` | ヘッダ `fmrb_boundary.h` (全関数・レコード・フック) と `fmrb_sdk_version.h`、サンプル (`hello` に Makefile) |
+| `<言語>/build.rb` | サンプルのビルド (メンテナ向け) |
+| `tools/check_bindings.rb` | ビルドしたアプリの import・フック・SDK のバージョンのチェック |
 | `docs/` | 入門ガイドと tour の仕様 |
-
-サンプルは `<言語>/examples/` の下の 1 ディレクトリが 1 アプリで、ディレクトリ名でビルドする。自分のアプリを
-始めるには、サンプルのディレクトリを新しい名前でコピーし、`<名前>.app.toml` もその名前に変えて、その名前で
-ビルドする (Rust はさらに、その `Cargo.toml` のパッケージ名を変え、`rust/Cargo.toml` の workspace の members に
-足す)。ビルドの出力先は `<言語>/build/` (git の管理外)。`-o <ディレクトリ>` で別の場所に出せる。
 
 ## ドキュメント
 
 - [docs/getting_started.ja.md](docs/getting_started.ja.md): 何も入っていない PC から、自分のアプリを sim・ボード・
-  ブラウザで動かすまで。アプリの形、`.app.toml`、各言語のビルド、トラブルシューティング
+  ブラウザで動かすまで。アプリの形、`.app.toml`、各言語のプロジェクトとビルド、トラブルシューティング
   (英語版: [docs/getting_started.md](docs/getting_started.md))
 - [docs/tour.md](docs/tour.md): サンプル `tour` の仕様 (英語)
 
