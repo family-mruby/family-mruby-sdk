@@ -23,7 +23,7 @@ type bounce struct {
 }
 
 var palette = [...][3]int32{
-	{255, 64, 64}, {64, 224, 64}, {64, 128, 255}, {255, 224, 0}, {255, 96, 255}, {0, 224, 224},
+	{255, 64, 64}, {64, 224, 64}, {64, 128, 255}, {224, 160, 0}, {255, 96, 255}, {0, 160, 160},
 }
 
 var (
@@ -32,10 +32,10 @@ var (
 )
 
 func (b *bounce) OnCreate() {
-	// 0x01 is the canvas color key (transparent), so the background must not
-	// round to it: (0, 0, 64) does, (0, 0, 128) is 0x02.
-	bg = fmrb.RGB(0, 0, 128)
-	fg = fmrb.RGB(255, 255, 255)
+	// White paper and black ink, as every SDK sample (never 0x01: the canvas
+	// color key, which shows through).
+	bg = fmrb.RGB(255, 255, 255)
+	fg = fmrb.RGB(0, 0, 0)
 	b.w, b.h = fmrb.Window.AreaWidth(), fmrb.Window.AreaHeight()
 	b.x, b.y, b.dx, b.dy = 4, top+2, 2, 1
 	b.info = "pid " + fmrb.Itoa(int64(fmrb.App.Pid()))

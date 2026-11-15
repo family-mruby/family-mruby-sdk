@@ -12,8 +12,8 @@ type hello struct {
 }
 
 func (h *hello) OnCreate() {
-	h.bg = fmrb.RGB(0, 0, 128) // dark blue; RGB(0, 0, 64) would be 0x01, the transparent key
-	h.fg = fmrb.RGB(255, 255, 255)
+	h.bg = fmrb.RGB(255, 255, 255) // white paper (never 0x01: the transparent key)
+	h.fg = fmrb.RGB(0, 0, 0)
 	h.key = "-"
 	fmrb.LogInfo("hello: started")
 }

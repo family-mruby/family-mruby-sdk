@@ -1,0 +1,10 @@
+# The SDK's bounce example (tinygo/examples/bounce). tinygo/build.rb writes
+# this next to bounce.app.wasm with sdk_version set; put both in a directory
+# under /app (the directory is the launcher's category).
+app_screen_name = "TinyGo bounce"
+language = "tinygo"
+default_window_mode = "window"
+default_window_width = 180
+default_window_height = 120
+default_window_pos_x = 30
+default_window_pos_y = 30
