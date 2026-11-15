@@ -47,6 +47,23 @@ module Boundary
     end
   end
 
+  # The version after base for a change of this level (:breaking,
+  # :addition, :same; tools/version.rb). From 1.0.0 on: MAJOR, MINOR, PATCH.
+  # While 0.x (semver's convention): breaking bumps MINOR, the others PATCH.
+  # 1.0.0 is never computed; it is set by hand when the boundary is stable.
+  def next_version(base, level)
+    ma, mi, pa = base.split('.').map(&:to_i)
+    if ma.zero?
+      level == :breaking ? "0.#{mi + 1}.0" : "0.#{mi}.#{pa + 1}"
+    else
+      case level
+      when :breaking then "#{ma + 1}.0.0"
+      when :addition then "#{ma}.#{mi + 1}.0"
+      else "#{ma}.#{mi}.#{pa + 1}"
+      end
+    end
+  end
+
   def record(manifest, c_name) = manifest['records'].find { |r| r['c_name'] == c_name }
 
   # A record whose fields all sit at a multiple of their own size, and whose

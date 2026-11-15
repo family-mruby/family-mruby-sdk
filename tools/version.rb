@@ -10,13 +10,20 @@
 #                                          # against a boundary.json of 0.1.0
 #   ruby tools/version.rb --write          # also write VERSION and regenerate
 #
-# MAJOR: something an app built before may use changed or went away -- a
+# Breaking: something an app built before may use changed or went away -- a
 #   function removed or its parameters or result changed (C types, not only
 #   wasm types: an int32 that became a uint8 means another thing), a record
 #   changed (a firmware would write past an older app's struct), a choice
 #   renumbered or removed, a hook removed or changed, the event buffer's size.
-# MINOR: only additions -- functions, records, hooks, choices after the last.
-# PATCH: the boundary is the same (its ABI hash); the SDK's own changes.
+# Addition: only additions -- functions, records, hooks, choices after the last.
+# Same: the boundary is the same (its ABI hash); the SDK's own changes.
+#
+# From 1.0.0 on, breaking bumps MAJOR, an addition MINOR and the rest PATCH.
+# While the version is 0.x (semver's convention for a boundary that is not
+# stable yet) everything moves one place down: breaking bumps MINOR
+# (0.1.0 -> 0.2.0), an addition or the rest PATCH (0.1.0 -> 0.1.1). 1.0.0 is
+# never computed: it is written into VERSION by hand when the boundary is
+# declared stable (Boundary.next_version, tested by tools/test_version.rb).
 #
 # With no tag yet, VERSION is the first release's and is kept as written.
 require 'optparse'
@@ -56,8 +63,8 @@ new = Boundary.load
 base_version = from || base[/\Av?(\d+\.\d+\.\d+)\z/, 1] ||
                (File.exist?(base) ? nil : git('show', "#{base}:VERSION")&.strip)
 
-major = []
-minor = []
+breaking = []
+added = []
 
 # functions: the C parameters and result an app was built with
 shape = ->(f) { [f['params'].map { |p| p['c'] }, f['result']['c'], f['result']['kind'] == 'void'] }
@@ -65,9 +72,9 @@ of = new['functions'].to_h { |f| [f['import'], f] }
 old['functions'].each do |f|
   n = of[f['import']]
   if n.nil?
-    major << "function #{f['import']} removed"
+    breaking << "function #{f['import']} removed"
   elsif shape.(n) != shape.(f)
-    major << "function #{f['import']} changed: #{shape.(f).first.join(', ')} -> #{shape.(n).first.join(', ')}"
+    breaking << "function #{f['import']} changed: #{shape.(f).first.join(', ')} -> #{shape.(n).first.join(', ')}"
   else
     [[f['args'], n['args']], [[f['result']], [n['result']]]].each do |oa, na|
       oa.zip(na).each do |o, x|
@@ -76,16 +83,16 @@ old['functions'].each do |f|
         oc = o['choices']
         nc = x['choices'] || []
         if nc.first(oc.size) != oc
-          major << "#{f['import']}: choices #{oc.join('|')} -> #{nc.join('|')}"
+          breaking << "#{f['import']}: choices #{oc.join('|')} -> #{nc.join('|')}"
         elsif nc.size > oc.size
-          minor << "#{f['import']}: choices added #{(nc - oc).join(', ')}"
+          added << "#{f['import']}: choices added #{(nc - oc).join(', ')}"
         end
       end
     end
   end
 end
 (new['functions'].map { |f| f['import'] } - old['functions'].map { |f| f['import'] }).each do |n|
-  minor << "function #{n} added"
+  added << "function #{n} added"
 end
 
 # records (field names, types and order; a choice list may grow at the end)
@@ -93,58 +100,53 @@ orr = old['records'].to_h { |r| [r['c_name'], r] }
 new['records'].each do |r|
   o = orr.delete(r['c_name'])
   if o.nil?
-    minor << "record #{r['c_name']} added"
+    added << "record #{r['c_name']} added"
     next
   end
   if o['fields'].map { |f| [f['name'], f['c']] } != r['fields'].map { |f| [f['name'], f['c']] }
-    major << "record #{r['c_name']} changed"
+    breaking << "record #{r['c_name']} changed"
     next
   end
   o['fields'].zip(r['fields']).each do |of_, nf|
     next unless of_['choices']
 
     if nf['choices'].first(of_['choices'].size) != of_['choices']
-      major << "#{r['c_name']}.#{nf['name']}: choices renumbered or removed"
+      breaking << "#{r['c_name']}.#{nf['name']}: choices renumbered or removed"
     elsif nf['choices'].size > of_['choices'].size
-      minor << "#{r['c_name']}.#{nf['name']}: choices added #{(nf['choices'] - of_['choices']).join(', ')}"
+      added << "#{r['c_name']}.#{nf['name']}: choices added #{(nf['choices'] - of_['choices']).join(', ')}"
     end
   end
 end
-orr.each_key { |n| major << "record #{n} removed" }
+orr.each_key { |n| breaking << "record #{n} removed" }
 
 # hooks
 hshape = ->(h) { [h['params'].map { |p| p['c'] }, h['result']] }
 oh = old['hooks'].to_h { |h| [h['export'], h] }
 new['hooks'].each do |h|
   o = oh.delete(h['export'])
-  if o.nil? then minor << "hook #{h['export']} added"
-  elsif hshape.(o) != hshape.(h) then major << "hook #{h['export']} changed"
+  if o.nil? then added << "hook #{h['export']} added"
+  elsif hshape.(o) != hshape.(h) then breaking << "hook #{h['export']} changed"
   end
 end
-oh.each_key { |n| major << "hook #{n} removed" }
-major << 'the event buffer changed' if old['event_buffer'] != new['event_buffer']
+oh.each_key { |n| breaking << "hook #{n} removed" }
+breaking << 'the event buffer changed' if old['event_buffer'] != new['event_buffer']
 
-level = if major.any? then :major
-        elsif minor.any? then :minor
-        else :patch
+level = if breaking.any? then :breaking
+        elsif added.any? then :addition
+        else :same
         end
-if old['abi_hash'] != new['abi_hash'] && level == :patch
+if old['abi_hash'] != new['abi_hash'] && level == :same
   # The hash also covers what the rules above do not tell apart (a record
   # only reordered and back, ...): be safe.
-  minor << "the ABI hash changed (#{old['abi_hash']} -> #{new['abi_hash']}) with no difference found"
-  level = :minor
+  added << "the ABI hash changed (#{old['abi_hash']} -> #{new['abi_hash']}) with no difference found"
+  level = :addition
 end
 
 puts "base: #{base}#{base_version ? " (#{base_version})" : ''}, boundary #{old['abi_hash']} -> #{new['abi_hash']}"
-major.each { |l| puts "  major: #{l}" }
-minor.each { |l| puts "  minor: #{l}" }
+breaking.each { |l| puts "  breaking: #{l}" }
+added.each { |l| puts "  added: #{l}" }
 if base_version
-  ma, mi, pa = base_version.split('.').map(&:to_i)
-  nxt = case level
-        when :major then "#{ma + 1}.0.0"
-        when :minor then "#{ma}.#{mi + 1}.0"
-        else "#{ma}.#{mi}.#{pa + 1}"
-        end
+  nxt = Boundary.next_version(base_version, level)
   puts "#{level}: the next version is #{nxt} (VERSION is #{current})"
   if write && nxt != current
     File.write(Boundary::VERSION_FILE, "#{nxt}\n")

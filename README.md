@@ -26,7 +26,7 @@ hand-written layer of each language sits on top of them.
 | `tinygo/build.rb`, `tinygo/examples/` | the TinyGo build script and samples |
 | `tools/gen_bindings.rb` | generates the files marked "generated" |
 | `tools/check_bindings.rb` | checks the generated files, the C header and built apps |
-| `tools/version.rb` | works out the next version from the last release's boundary |
+| `tools/version.rb` | works out the next version from the last release's boundary (`tools/test_version.rb` tests it) |
 | `docs/` | the getting-started guide and the tour's specification |
 
 Status: experimental, follows fmruby-core's develop branch.
@@ -85,10 +85,22 @@ and `tour` on top.
 `MAJOR.MINOR.PATCH`, decided by comparing `boundary/boundary.json` with the
 last release's (`ruby tools/version.rb`, against the latest `vX.Y.Z` tag):
 
-- MAJOR: a function, record or hook an older app may use changed or went
-  away (also a choice renumbered, or the event buffer's size);
-- MINOR: only additions;
-- PATCH: the same boundary (the SDK's own changes).
+- breaking: a function, record or hook an older app may use changed or
+  went away (also a choice renumbered, or the event buffer's size);
+- addition: only additions;
+- same: the same boundary (the SDK's own changes).
+
+| Change | While 0.x | From 1.0.0 on |
+|---|---|---|
+| breaking | MINOR (0.1.0 -> 0.2.0) | MAJOR (1.2.3 -> 2.0.0) |
+| addition | PATCH (0.1.0 -> 0.1.1) | MINOR (1.2.3 -> 1.3.0) |
+| same | PATCH | PATCH |
+
+While the version is 0.x the boundary is not stable yet, and the numbers
+follow semver's convention for that: everything moves one place down. 1.0.0
+is never worked out by the tool: it is written into `VERSION` by hand when
+the boundary is declared stable. `ruby tools/test_version.rb` tests both
+rules.
 
 The build scripts write the version into the app's `.app.toml`
 (`sdk_version`). The firmware does not compare numbers: before the app

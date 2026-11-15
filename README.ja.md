@@ -21,7 +21,7 @@ JSON から各言語の低い層のつなぎを生成する (`tools/gen_bindings
 | `tinygo/build.rb`・`tinygo/examples/` | TinyGo のビルドのスクリプトとサンプル |
 | `tools/gen_bindings.rb` | 「生成」の印のファイルを作る |
 | `tools/check_bindings.rb` | 生成物・C のヘッダ・ビルドしたアプリを照合する |
-| `tools/version.rb` | 前回のリリースの境界と比べて次の版を出す |
+| `tools/version.rb` | 前回のリリースの境界と比べて次の版を出す (`tools/test_version.rb` がその試験) |
 | `docs/` | 入門と tour の仕様 |
 
 状態: 試験的。fmruby-core の develop に追従する。
@@ -71,10 +71,20 @@ ruby tools/check_bindings.rb
 `MAJOR.MINOR.PATCH`。`boundary/boundary.json` を前回のリリースのものと比べて決める
 (`ruby tools/version.rb`。最新の `vX.Y.Z` のタグと比べる):
 
-- MAJOR: 古いアプリが使うかもしれない関数・記録・フックが変わった・消えた (選択肢の番号の変更、イベントの
+- 壊す変更: 古いアプリが使うかもしれない関数・記録・フックが変わった・消えた (選択肢の番号の変更、イベントの
   置き場の大きさの変更も)
-- MINOR: 足しただけ
-- PATCH: 境界が同じ (SDK だけの変更)
+- 追加: 足しただけ
+- 同じ: 境界が同じ (SDK だけの変更)
+
+| 変更 | 0.x の間 | 1.0.0 から |
+|---|---|---|
+| 壊す変更 | MINOR (0.1.0 → 0.2.0) | MAJOR (1.2.3 → 2.0.0) |
+| 追加 | PATCH (0.1.0 → 0.1.1) | MINOR (1.2.3 → 1.3.0) |
+| 同じ | PATCH | PATCH |
+
+0.x の間は境界がまだ固まっていないので、semver の 0.x の慣例どおり 1 桁ずつ下にずらす。1.0.0 は道具が
+出すことはなく、境界を安定と決めたときに手で `VERSION` に書く。2 つの決まりは `ruby tools/test_version.rb` で
+確かめる。
 
 ビルドのスクリプトが版をアプリの `.app.toml` (`sdk_version`) に書く。本体は番号を比べない。起動の前に `.wasm`
 が import する関数をすべて調べ、自分に無い (または形の違う) 関数を使うアプリを、その関数の名前とアプリの
