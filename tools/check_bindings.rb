@@ -17,7 +17,9 @@
 #    parameters, each of the same wasm type (int32/uint32/pointer -> i32,
 #    int64 -> i64, double/float64 -> f64), and the same result.
 # 2. Every "fmrb" import of each .wasm given must be in the header with the
-#    same wasm type, and the exports the firmware calls are listed.
+#    same wasm type, and every hook it exports (the functions the firmware
+#    calls: FMRB_EXPORT("<name>") at the header's end, and _initialize) must
+#    have the header's wasm type.
 # Exit status 1 on any difference.
 require 'optparse'
 
@@ -44,6 +46,14 @@ File.read(header).scan(/FMRB_IMPORT\("(\w+)"\)\s*\n\s*(\w+)\s+\w+\(([^)]*)\);/) 
   c[name] = [params, ret == 'void' ? nil : c_wasm_type(ret)]
 end
 abort "no functions read from #{header}" if c.empty?
+
+# the hooks: name => [params, result]
+hooks = { '_initialize' => [[], nil] }
+File.read(header).scan(/FMRB_EXPORT\("(\w+)"\)\s*\n\s*(\w+)\s+\w+\(([^)]*)\);/) do |name, ret, args|
+  params = args.strip == 'void' ? [] : args.split(',').map { |a| c_wasm_type(a.sub(/\w+\s*\z/, '')) }
+  hooks[name] = [params, ret == 'void' ? nil : c_wasm_type(ret)]
+end
+abort "no hooks read from #{header}" if hooks.size == 1
 
 errors = []
 go = {}
@@ -96,6 +106,7 @@ ARGV.each do |path|
   types = []
   imports = []
   exports = []
+  funcs = [] # type index of each function the module defines
   while i < s.bytesize
     id = s.getbyte(i)
     size, i = leb(s, i + 1)
@@ -124,13 +135,16 @@ ARGV.each do |path|
           break # tables, memories and globals are not imported by these apps
         end
       end
+    when 3
+      n, j = leb(s, j)
+      n.times { t, j = leb(s, j); funcs << t }
     when 7
       n, j = leb(s, j)
       n.times do
         l, j = leb(s, j); name = s[j, l]; j += l
         kind = s.getbyte(j); j += 1
-        _, j = leb(s, j)
-        exports << name if kind.zero?
+        idx, j = leb(s, j)
+        exports << [name, idx] if kind.zero?
       end
     end
     i += size
@@ -144,8 +158,15 @@ ARGV.each do |path|
       errors << "#{path}: fmrb.#{name} is #{sig.inspect}, header #{c[name].inspect}"
     end
   end
-  hooks = exports & %w[_initialize on_create on_update on_event on_destroy on_suspend on_resume on_resize on_quit_request]
-  puts "#{File.basename(path)}: #{s.bytesize} bytes, #{imports.size} imports (#{imports.map { |m, n, _| "#{m}.#{n}" }.join(' ')}), hooks #{hooks.join(' ')}"
+  found = []
+  exports.each do |name, idx|
+    next unless hooks.key?(name)
+
+    found << name
+    sig = idx < imports.size ? imports[idx][2] : types[funcs[idx - imports.size]]
+    errors << "#{path}: exports #{name} as #{sig.inspect}, header #{hooks[name].inspect}" if sig != hooks[name]
+  end
+  puts "#{File.basename(path)}: #{s.bytesize} bytes, #{imports.size} imports (#{imports.map { |m, n, _| "#{m}.#{n}" }.join(' ')}), hooks #{found.join(' ')}"
 end
 
 if errors.empty?

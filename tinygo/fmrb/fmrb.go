@@ -17,6 +17,7 @@ import "unsafe"
 const (
 	ErrFailed int32 = -1
 	ErrArg    int32 = -2
+	None      int32 = -3 // nil in Ruby
 )
 
 func strPtr(s string) (unsafe.Pointer, int32) {
@@ -28,27 +29,42 @@ func strPtr(s string) (unsafe.Pointer, int32) {
 
 // ---- the app's hooks
 
-// Event kinds (the firmware's fmrb_hid_event_type_t).
+// Event types: FmrbApp::event's choices (a Symbol in Ruby), in the header's
+// order (FMRB_APP_EVENT_TYPE_*).
 const (
-	KeyDown     int32 = 1
-	KeyUp       int32 = 2
-	MouseMove   int32 = 3
-	MouseDown   int32 = 4
-	MouseUp     int32 = 5
-	GamepadDown int32 = 6
-	GamepadUp   int32 = 7
-	GamepadAxis int32 = 8
-	KanaMode    int32 = 9
-	MouseWheel  int32 = 10
+	KeyDown int32 = iota
+	KeyUp
+	MouseDown
+	MouseUp
+	MouseMove
+	MouseWheel
+	GamepadDown
+	GamepadUp
+	GamepadAxis
+	KanaMode
 )
 
-// Event is one input event. Which fields mean something depends on Kind:
-// keys have Keycode, Modifier and Character; mouse events X and Y (in the
-// app's area) and, pressed or released, Button; the wheel Value (the delta);
-// gamepad buttons Button and Value (the pad); an axis Button (the axis),
-// Value and Keycode (the pad); the kana mode Value.
+// Event is one input event: FmrbApp::event (fmrb_app_event_t, 60 bytes; the
+// firmware passes a pointer to it). Which fields mean something depends on
+// Type, as in Ruby's event Hash: keys have Keycode, Scancode, Modifier and
+// Character; mouse events X and Y (in the app's area), WX and WY (in the
+// window) and, pressed or released, Button; the wheel also Delta; gamepad
+// buttons GamepadID and Button; an axis GamepadID, Axis and Value; the kana
+// mode Mode. The others are 0.
 type Event struct {
-	Kind, X, Y, Button, Keycode, Modifier, Character, Value int32
+	Type      int32
+	X, Y      int32
+	WX, WY    int32
+	Button    int32
+	Keycode   int32
+	Scancode  int32
+	Modifier  int32
+	Character int32
+	Delta     int32
+	GamepadID int32
+	Axis      int32
+	Value     int32
+	Mode      int32
 }
 
 type creator interface{ OnCreate() }
@@ -63,66 +79,210 @@ type resumer interface{ OnResume() }
 type resizer interface{ OnResize(w, h int32) }
 type quitRequester interface{ OnQuitRequest() }
 
-var app any
+var theApp any
 
 // SetApp sets the value whose hooks the firmware calls. Call it from init.
-func SetApp(a any) { app = a }
+func SetApp(a any) { theApp = a }
 
 //export on_create
 func onCreate() {
-	if a, ok := app.(creator); ok {
+	if a, ok := theApp.(creator); ok {
 		a.OnCreate()
 	}
 }
 
 //export on_update
 func onUpdate() int32 {
-	if a, ok := app.(updater); ok {
+	if a, ok := theApp.(updater); ok {
 		return a.OnUpdate()
 	}
 	return -1
 }
 
+// The record is on the firmware's side of the call (the app's own stack,
+// below its stack pointer): copied before the app's hook sees it.
+//
 //export on_event
-func onEvent(kind, x, y, button, keycode, modifier, character, value int32) {
-	if a, ok := app.(eventHandler); ok {
-		a.OnEvent(Event{kind, x, y, button, keycode, modifier, character, value})
+func onEvent(ev *Event) {
+	if a, ok := theApp.(eventHandler); ok {
+		a.OnEvent(*ev)
 	}
 }
 
 //export on_destroy
 func onDestroy() {
-	if a, ok := app.(destroyer); ok {
+	if a, ok := theApp.(destroyer); ok {
 		a.OnDestroy()
 	}
 }
 
 //export on_suspend
 func onSuspend() {
-	if a, ok := app.(suspender); ok {
+	if a, ok := theApp.(suspender); ok {
 		a.OnSuspend()
 	}
 }
 
 //export on_resume
 func onResume() {
-	if a, ok := app.(resumer); ok {
+	if a, ok := theApp.(resumer); ok {
 		a.OnResume()
 	}
 }
 
 //export on_resize
 func onResize(w, h int32) {
-	if a, ok := app.(resizer); ok {
+	if a, ok := theApp.(resizer); ok {
 		a.OnResize(w, h)
 	}
 }
 
 //export on_quit_request
 func onQuitRequest() {
-	if a, ok := app.(quitRequester); ok {
+	if a, ok := theApp.(quitRequester); ok {
 		a.OnQuitRequest()
 	}
+}
+
+// ---- FmrbApp (the app itself; its window functions work from any hook)
+
+// Platforms (FmrbApp#platform).
+const (
+	PlatformESP32 int32 = 0
+	PlatformLinux int32 = 1
+)
+
+// AppT is FmrbApp: the running app and its window.
+type AppT struct{}
+
+// App is the running app.
+var App AppT
+
+// readString calls a boundary function that writes a String into the
+// caller's buffer and returns its full length.
+func readString(f func(out unsafe.Pointer, size int32) int32) string {
+	var buf [64]byte
+	n := f(unsafe.Pointer(&buf[0]), int32(len(buf)))
+	if n < 0 {
+		return ""
+	}
+	if int(n) > len(buf) {
+		big := make([]byte, n)
+		n = f(unsafe.Pointer(&big[0]), n)
+		if n < 0 || int(n) > len(big) {
+			return ""
+		}
+		return string(big[:n])
+	}
+	return string(buf[:n])
+}
+
+// (An imported function is not a value in TinyGo: each goes in a closure.)
+func (AppT) Name() string {
+	return readString(func(out unsafe.Pointer, size int32) int32 { return appName(out, size) })
+}
+func (AppT) Language() string {
+	return readString(func(out unsafe.Pointer, size int32) int32 { return appLanguage(out, size) })
+}
+func (AppT) Pid() int32            { return appPid() }
+func (AppT) Platform() int32       { return appPlatform() }
+func (AppT) UserAreaWidth() int32  { return appUserAreaWidth() }
+func (AppT) UserAreaHeight() int32 { return appUserAreaHeight() }
+func (AppT) ThemeBg() int32        { return appThemeBg() }
+func (AppT) ThemeFg() int32        { return appThemeFg() }
+func (AppT) ThemeAccent() int32    { return appThemeAccent() }
+
+// Stop ends the app after the hook it is called from returns.
+func (AppT) Stop() { appStop() }
+
+// UptimeUs is the microseconds since power-on.
+func UptimeUs() int64 { return appUptimeUs() }
+
+// UptimeMs is the milliseconds since power-on.
+func UptimeMs() int64 { return appUptimeMs() }
+
+// ---- FmrbAudio
+
+// Audio is an FmrbAudio receiver: the app's sound.
+type Audio int32
+
+// NewAudio is FmrbAudio.new: the app's sound (receiver 0 for now).
+func NewAudio() Audio { return 0 }
+
+// NoteOn sounds a note on a channel with Ruby's defaults (volume 10, duty
+// 2, no sweep).
+func (a Audio) NoteOn(channel, freq int32) { audioNoteOnRaw(int32(a), channel, freq, 10, 2, 0) }
+
+// NoteOnRaw is note_on with nothing left out.
+func (a Audio) NoteOnRaw(channel, freq, volume, duty, sweep int32) {
+	audioNoteOnRaw(int32(a), channel, freq, volume, duty, sweep)
+}
+
+func (a Audio) NoteOff(channel int32) { audioNoteOff(int32(a), channel) }
+
+// ---- FmrbFile (by path; the places a Ruby app's File may read and write)
+
+// FileRead reads a whole file; ok is false when there is none.
+func FileRead(path string) (data []byte, ok bool) {
+	p, n := strPtr(path)
+	size := fileRead(p, n, nil, 0)
+	if size < 0 {
+		return nil, false
+	}
+	if size == 0 {
+		return []byte{}, true
+	}
+	data = make([]byte, size)
+	got := fileRead(p, n, unsafe.Pointer(&data[0]), size)
+	if got < 0 {
+		return nil, false
+	}
+	if got < size {
+		data = data[:got]
+	}
+	return data, true
+}
+
+// FileWrite writes a whole file, replacing it.
+func FileWrite(path string, data []byte) bool {
+	p, n := strPtr(path)
+	var d unsafe.Pointer
+	if len(data) > 0 {
+		d = unsafe.Pointer(&data[0])
+	}
+	return fileWrite(p, n, d, int32(len(data))) == 1
+}
+
+func FileExist(path string) bool { p, n := strPtr(path); return fileExist(p, n) == 1 }
+
+// FileSize is the size in bytes; ok is false when there is no such file.
+func FileSize(path string) (size int64, ok bool) {
+	p, n := strPtr(path)
+	size = fileSize(p, n)
+	return size, size >= 0
+}
+
+// FileDelete deletes a file or an empty directory.
+func FileDelete(path string) bool { p, n := strPtr(path); return fileDelete(p, n) == 1 }
+
+// FileList is the names in a directory (a directory's with a "/" after it);
+// ok is false when it cannot be read.
+func FileList(dir string) (names []string, ok bool) {
+	p, n := strPtr(dir)
+	s := readString(func(out unsafe.Pointer, size int32) int32 { return fileListRaw(p, n, out, size) })
+	if fileListRaw(p, n, nil, 0) < 0 {
+		return nil, false
+	}
+	start := 0
+	for i := 0; i <= len(s); i++ {
+		if i == len(s) || s[i] == '\n' {
+			if i > start {
+				names = append(names, s[start:i])
+			}
+			start = i + 1
+		}
+	}
+	return names, true
 }
 
 // ---- FmrbGfx
@@ -139,9 +299,9 @@ const Transparent int32 = -1
 // RGB turns 0-255 components into the firmware's 8-bit color (RGB332).
 func RGB(r, g, b int32) int32 { return gfxRgbTo332(r, g, b) }
 
-func (g Gfx) AreaWidth() int32  { return gfxAreaWidth(int32(g)) }
-func (g Gfx) AreaHeight() int32 { return gfxAreaHeight(int32(g)) }
-func (g Gfx) Clear(color int32) { gfxClear(int32(g), color) }
+func (g Gfx) AreaWidth() int32           { return gfxAreaWidth(int32(g)) }
+func (g Gfx) AreaHeight() int32          { return gfxAreaHeight(int32(g)) }
+func (g Gfx) Clear(color int32)          { gfxClear(int32(g), color) }
 func (g Gfx) SetPixel(x, y, color int32) { gfxSetPixel(int32(g), x, y, color) }
 func (g Gfx) DrawLine(x0, y0, x1, y1, color int32) {
 	gfxDrawLine(int32(g), x0, y0, x1, y1, color)
@@ -176,11 +336,6 @@ func (g Gfx) SetTextSize(size int32) { gfxSetTextSizeRaw(int32(g), size) }
 
 // Present shows what was drawn, at the window's place.
 func (g Gfx) Present() { gfxPresentRaw(int32(g), 0, 0, 0) }
-
-// ---- FmrbApp
-
-// UptimeUs is the microseconds since power-on.
-func UptimeUs() int64 { return appUptimeUs() }
 
 // ---- Log (the same log as a Ruby app's)
 

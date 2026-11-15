@@ -5,15 +5,50 @@
 //
 // Each function is the flat boundary function as the firmware registers it
 // (import module "fmrb"). A String is a pointer and a length; a result is 0
-// or more on success, ErrFailed or ErrArg otherwise. Functions that pass a
-// record (wallclock, image info, file info, the song status, composite
-// regions) and FmrbAudio are not here yet.
+// or more on success, ErrFailed or ErrArg otherwise (None where Ruby gives
+// nil). FmrbAudio's functions take the receiver number first (0 for now).
+// Only what the SDK's wrappers use is here: functions that pass a record
+// (wallclock, image info, file info, the song status, composite regions) are
+// not yet.
 
 package fmrb
 
 import "unsafe"
 
-// ---- FmrbApp
+// ---- FmrbApp (no receiver: the app itself)
+
+//go:wasmimport fmrb app_name
+func appName(out unsafe.Pointer, outSize int32) int32
+
+//go:wasmimport fmrb app_user_area_width
+func appUserAreaWidth() int32
+
+//go:wasmimport fmrb app_user_area_height
+func appUserAreaHeight() int32
+
+//go:wasmimport fmrb app_platform
+func appPlatform() int32
+
+//go:wasmimport fmrb app_stop
+func appStop() int32
+
+//go:wasmimport fmrb app_theme_bg
+func appThemeBg() int32
+
+//go:wasmimport fmrb app_theme_fg
+func appThemeFg() int32
+
+//go:wasmimport fmrb app_theme_accent
+func appThemeAccent() int32
+
+//go:wasmimport fmrb app_language
+func appLanguage(out unsafe.Pointer, outSize int32) int32
+
+//go:wasmimport fmrb app_pid
+func appPid() int32
+
+//go:wasmimport fmrb app_uptime_ms
+func appUptimeMs() int64
 
 //go:wasmimport fmrb app_clipboard_raw
 func appClipboardRaw(limit int32, out unsafe.Pointer, outSize int32) int32
@@ -26,6 +61,34 @@ func appClipboardGen() int32
 
 //go:wasmimport fmrb app_uptime_us
 func appUptimeUs() int64
+
+// ---- FmrbAudio (the first argument is the receiver number, 0 for now)
+
+//go:wasmimport fmrb audio_note_on_raw
+func audioNoteOnRaw(audio int32, channel int32, freq int32, volume int32, duty int32, sweep int32) int32
+
+//go:wasmimport fmrb audio_note_off
+func audioNoteOff(audio int32, channel int32) int32
+
+// ---- FmrbFile (by path, no state)
+
+//go:wasmimport fmrb file_read
+func fileRead(path unsafe.Pointer, pathLen int32, out unsafe.Pointer, outSize int32) int32
+
+//go:wasmimport fmrb file_write
+func fileWrite(path unsafe.Pointer, pathLen int32, data unsafe.Pointer, dataLen int32) int32
+
+//go:wasmimport fmrb file_exist
+func fileExist(path unsafe.Pointer, pathLen int32) int32
+
+//go:wasmimport fmrb file_size
+func fileSize(path unsafe.Pointer, pathLen int32) int64
+
+//go:wasmimport fmrb file_delete
+func fileDelete(path unsafe.Pointer, pathLen int32) int32
+
+//go:wasmimport fmrb file_list_raw
+func fileListRaw(dir unsafe.Pointer, dirLen int32, out unsafe.Pointer, outSize int32) int32
 
 // ---- FmrbGfx (the first argument is the drawer number)
 
