@@ -4,8 +4,8 @@ SDK for writing Family mruby apps in languages other than Ruby. Apps are
 compiled to WebAssembly on a PC and run on the device by WAMR, inside the
 same app shell (window, frame, events, timers) as Ruby apps.
 
-Languages: **TinyGo** and **C** today; Rust and Zig are planned, generated
-from the same definitions.
+Languages: **TinyGo**, **Rust**, **Zig** and **C**, all from the same
+definitions.
 
 The boundary between an app and the firmware is defined once, in the
 firmware's type definitions (`sig/*.rbs` in fmruby-core). fmruby-core's
@@ -24,6 +24,12 @@ hand-written layer of each language sits on top of them.
 | `tinygo/fmrb/` | the TinyGo package (hand-written: hooks, Window, App, ...) |
 | `tinygo/fmrb/raw/` | every boundary function, record and choice for TinyGo (generated) |
 | `tinygo/build.rb`, `tinygo/examples/` | the TinyGo build script and samples |
+| `rust/` | the Rust crate `fmrb` (package `family-mruby-sdk`; `src/lib.rs` hand-written: hooks, `app!`, Window, App, ...) |
+| `rust/src/raw/` | every boundary function, record and choice for Rust (generated) |
+| `rust/build.rb`, `rust/examples/` | the Rust build script and samples (workspace members) |
+| `zig/` | the Zig package (`build.zig`, `build.zig.zon`) and its module `fmrb` (`src/fmrb.zig` hand-written) |
+| `zig/src/raw.zig` | every boundary function, record and choice for Zig (generated) |
+| `zig/build.rb`, `zig/examples/` | the Zig build script and samples |
 | `tools/gen_bindings.rb` | generates the files marked "generated" |
 | `tools/check_bindings.rb` | checks the generated files, the C header and built apps |
 | `tools/version.rb` | works out the next version from the last release's boundary (`tools/test_version.rb` tests it) |
@@ -41,16 +47,27 @@ Every language has `tour`: hello plus a tour of the main functions (shapes,
 text and Japanese text, a picture, sound, files, the log, clocks, the app's
 information, key and pointer input) with the same content and screen in
 each language, so they can be compared. Its specification is
-[docs/tour.md](docs/tour.md). TinyGo also has `hello` (the smallest app, the
-one the guide builds) and `bounce` (a small animation).
+[docs/tour.md](docs/tour.md). TinyGo, Rust and Zig also have `hello` (the
+smallest app, the one the guide builds), and TinyGo `bounce` (a small
+animation).
+
+| tour | Size of the .wasm (SDK 0.1.0) |
+|---|---|
+| TinyGo | 16,956 B |
+| Rust | 11,016 B |
+| Zig | 10,639 B |
+| C | 9,143 B |
 
 ## Build
 
 ```
 ruby tinygo/build.rb tour                   # -> tinygo/build/tour.app.wasm (+ .app.toml)
+ruby rust/build.rb tour                     # -> rust/build/tour.app.wasm (+ .app.toml)
+ruby zig/build.rb tour                      # -> zig/build/tour.app.wasm (+ .app.toml)
 ruby c/build.rb tour                        # -> c/build/tour.app.wasm (+ .app.toml)
 ruby tinygo/build.rb tour -o <dir>          # e.g. fmruby-core/flash/app/tinygo
 ruby tools/check_bindings.rb [app.wasm ...] # the SDK is consistent; the apps' imports
+ruby tools/check_bindings.rb --examples     # and every example of every language, built
 ```
 
 - TinyGo: from `~/toolchains/tinygo` (override with `TINYGO`), with
@@ -58,7 +75,15 @@ ruby tools/check_bindings.rb [app.wasm ...] # the SDK is consistent; the apps' i
 - C: `zig cc -target wasm32-freestanding` from `~/toolchains/zig-*` (override
   with `ZIG`, or `CC=clang` for clang with wasm-ld), no libc, no entry point,
   a 16 KB stack.
-- Both write the `.app.toml` next to the `.wasm` with
+- Rust: `cargo build --release --target wasm32-unknown-unknown` (install the
+  target with rustup; `CARGO` overrides the command), the release profile of
+  `rust/Cargo.toml` (size, LTO, abort on panic, stripped) and a 16 KB stack
+  (`-C link-arg=-zstack-size=16384`; without it the module starts at 17
+  pages). `no_std`, no allocator, no dependencies.
+- Zig: `zig build -Dexample=<name>` with the newest `~/toolchains/zig-*`
+  (override with `ZIG`; 0.15 or later): wasm32-freestanding, no entry point,
+  exports kept, ReleaseSmall, a 16 KB stack (`addApp` in `zig/build.zig`).
+- All of them write the `.app.toml` next to the `.wasm` with
   `sdk_version = "<VERSION>"`.
 
 ## Regenerating the bindings
@@ -67,7 +92,7 @@ When fmruby-core's boundary changes:
 
 ```
 cd <fmruby-core> && rake boundary:sdk SDK=<this checkout>   # boundary.json, c/fmrb_boundary.h
-cd <this checkout> && ruby tools/gen_bindings.rb            # tinygo/fmrb/raw/, c/fmrb_sdk_version.h
+cd <this checkout> && ruby tools/gen_bindings.rb            # tinygo/fmrb/raw/, rust/src/raw/, zig/src/raw.zig, c/fmrb_sdk_version.h
 ruby tools/check_bindings.rb
 ```
 
@@ -77,8 +102,10 @@ description), so this repository stays ASCII.
 
 To add a language: put its templates under `tools/templates/<lang>/`, list
 them in `OUTPUTS` of `tools/lib/boundary.rb` (with a helper module for its
-names and types, as `Go` is), and write its hand-written layer, build script
-and `tour` on top.
+names and types, as `Go`, `Rust` and `Zig` are), and write its hand-written
+layer, build script and `tour` on top. `tools/check_bindings.rb` then checks
+the new products with the others; reading the declarations back (its
+`DECLS`) also checks the templates.
 
 ## Versions
 
@@ -134,9 +161,10 @@ Release steps (not done yet; no tag has been made):
 1. In fmruby-core: `rake boundary:sdk SDK=<this checkout>`; here
    `ruby tools/gen_bindings.rb`.
 2. `ruby tools/version.rb` and read what it lists; `--write` sets `VERSION`
-   and regenerates.
-3. Build the samples (`tinygo/build.rb`, `c/build.rb`) and run
-   `ruby tools/check_bindings.rb` on them; check them on a firmware built
-   from the matching fmruby-core.
+   (and the versions in `rust/Cargo.toml` and `zig/build.zig.zon`) and
+   regenerates.
+3. `ruby tools/check_bindings.rb --examples` (builds every language's
+   samples and checks them); check them on a firmware built from the
+   matching fmruby-core.
 4. Commit, then `git tag vX.Y.Z` and `git tag tinygo/vX.Y.Z`, and push the
    commit and both tags.

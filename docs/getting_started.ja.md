@@ -4,7 +4,7 @@
 
 この文書は、何も入っていない PC から始めて、TinyGo で書いたアプリを Family mruby の上で動かすまでの手順を
 示す。Linux のシミュレーション (sim)、WiFi で送る ESP32-P4 のボード、Web のブラウザ版の 3 か所で動かす。
-C のアプリも、ビルドのスクリプトが違うだけで同じ手順になる (6 章)。題材は
+C・Rust・Zig のアプリも、ビルドのスクリプトが違うだけで同じ手順になる (6 章)。題材は
 このリポジトリの `tinygo/examples/hello`。`hello` を自分のアプリの名前に読み替えれば、同じ手順で自分の
 アプリを作れる。
 
@@ -23,7 +23,9 @@ WebAssembly (`.app.wasm`) にコンパイルし、端末ではファームウェ
 出力する (この SDK の `c/fmrb_boundary.h`)。これが ABI (関数の名前と引数、イベントのレコード、フック) になる。
 ジェネレータは境界をデータ (`boundary/boundary.json`) にも書き出し、この SDK はそこから TinyGo のパッケージ
 `tinygo/fmrb/raw` (全部の関数・レコード・選択肢) を生成する。パッケージ `tinygo/fmrb` はその上の手書きの層
-(フックと、よく使う関数の Go らしい形) で、生成物が境界と食い違っていないかは `tools/check_bindings.rb` で確認する。
+(フックと、よく使う関数の Go らしい形)。Rust と Zig も同じ 2 層で、生成の `rust/src/raw/`・`zig/src/raw.zig` の
+上に手書きの crate `fmrb` (`rust/src/lib.rs`)・モジュール `fmrb` (`zig/src/fmrb.zig`) が載る。生成物が境界と
+食い違っていないかは `tools/check_bindings.rb` で確認する。
 
 今 wasm のアプリが動く端末:
 
@@ -41,6 +43,9 @@ WebAssembly (`.app.wasm`) にコンパイルし、端末ではファームウェ
 - **Ruby** (3.x)。ビルドと確認のスクリプトに使う。
 - C のアプリには **Zig** (その `zig cc`。Zig 0.17.1 で確認した)。`~/toolchains/zig-<版>/` に展開する
   (または `ZIG=` で実行ファイルを指定)。clang と wasm-ld でもよい (`CC=clang`)。libc は要らない。
+- Rust のアプリには **Rust** と `wasm32-unknown-unknown` のターゲット (`rustup target add wasm32-unknown-unknown`。
+  Rust 1.97.0 で確認した)。crate は依存を持たないので、何もダウンロードしない。
+- Zig のアプリには **Zig** 0.15 以降 (0.17.1 で確認した)。置き場所は C と同じ。
 - **git**。
 - sim で動かすなら: Family mruby の開発用のツリー (`family-mruby` リポジトリに `fmruby-core` と
   `fmruby-graphics-audio` を取り込んだもの) と Docker。そちらの README の「Testing Without Hardware」を参照。
@@ -77,6 +82,8 @@ cd family-mruby-sdk
 | `tinygo/examples/` | サンプルアプリ (`hello`・`tour`・`bounce`)。1 ディレクトリが 1 アプリで、`main.go` と `.app.toml` を置く |
 | `tinygo/build.rb` | サンプル 1 つをビルドして `<名前>.app.wasm` とその `.app.toml` を作る |
 | `c/` | C のヘッダ (`fmrb_boundary.h`・`fmrb_sdk_version.h`)、`build.rb`、`examples/tour` |
+| `rust/` | Rust の crate `fmrb` (`src/lib.rs`。`src/raw/` は生成物)、`build.rb`、`examples/hello`・`examples/tour` |
+| `zig/` | Zig のパッケージとモジュール `fmrb` (`src/fmrb.zig`。`src/raw.zig` は生成物)、`build.zig`、`build.rb`、`examples/hello`・`examples/tour` |
 | `tools/check_bindings.rb` | 生成物とアプリの import を境界と照合する |
 | `docs/tour.md` | サンプル `tour` の仕様 (どの言語でも同じアプリ) |
 
@@ -310,6 +317,91 @@ C のアプリは `fmrb_boundary.h` を include して平らな関数を呼び (
 -Wl,-z,stack-size=16384`。コンパイラが `memcpy`・`memset` を求めたら自分で定義する (`c/examples/tour/app.c` が
 そうしている)。文字列はポインタと長さで渡し、NUL 終端ではない。
 
+### Rust
+
+```
+ruby rust/build.rb hello    # -> rust/build/hello.app.wasm と hello.app.toml
+```
+
+アプリは `no_std` で `cdylib` のライブラリの crate で、SDK の crate に依存する
+(`fmrb = { package = "family-mruby-sdk", path = ... }`。`rust/examples/hello/Cargo.toml` を参照)。`fmrb::App`
+(フックはどれも既定で何もしない) と `Default` を実装した型を作り、`fmrb::app!(Hello);` で 1 度だけ名前を
+渡す。このマクロがフックとイベントの記録の置き場を export する。
+
+```rust
+#![no_std]
+use fmrb::{Event, Text, WINDOW};
+
+#[derive(Default)]
+struct Hello { count: i64 }
+
+impl fmrb::App for Hello {
+    fn on_update(&mut self) -> i32 {
+        self.count += 1;
+        WINDOW.fill_rect(0, 0, WINDOW.area_width(), WINDOW.area_height(), 0xFF);
+        WINDOW.draw_text(4, 4, Text::<32>::from("count ").int(self.count).as_str(), 0x00);
+        WINDOW.present();
+        100
+    }
+    fn on_event(&mut self, ev: &Event) {
+        if ev.kind() == fmrb::KEY_DOWN && ev.character == 'q' as i32 {
+            fmrb::app::stop();
+        }
+    }
+}
+
+fmrb::app!(Hello);
+```
+
+アロケータは使わない。ファームウェアが返す文字列 (`fmrb::app::name()` など) は `Text<N>` (固定の大きさの
+バッファ) で受け取る。`Text` は描く行を組み立てるのにも使える (`push`・`int`・`core::fmt::Write`)。crate は
+トラップする panic handler を持つ (自分のものを使うなら既定の feature `panic-handler` を外す)。
+`rust/build.rb` は `cargo build --release --target wasm32-unknown-unknown` を、`rust/Cargo.toml` の release の
+profile (サイズ優先・LTO・panic で abort・strip) と `-C link-arg=-zstack-size=16384` で流す。スタックの大きさを
+指定しないとリンカが 1 MiB を取り、アプリのメモリが 17 ページから始まる。自分の crate では同じ profile を
+`Cargo.toml` に、フラグを `RUSTFLAGS` (か `.cargo/config.toml`) に書く。ほかの関数は `fmrb::raw` にある (`unsafe`)。
+
+### Zig
+
+```
+ruby zig/build.rb hello     # -> zig/build/hello.app.wasm と hello.app.toml
+```
+
+アプリはモジュール `fmrb` を import するルートのファイルで、全部の欄に既定値のある struct に、使うフックを
+メソッド (`onCreate`・`onUpdate`・`onEvent` など) として書き、`fmrb.exportApp` で export する:
+
+```zig
+const fmrb = @import("fmrb");
+pub const panic = fmrb.panic; // panic はトラップにする (アプリが小さくなる)
+
+const Hello = struct {
+    count: i64 = 0,
+
+    pub fn onUpdate(self: *Hello) i32 {
+        self.count += 1;
+        const g = fmrb.window;
+        g.fillRect(0, 0, g.areaWidth(), g.areaHeight(), 0xFF);
+        g.drawText(4, 4, "Hello, Family mruby!", 0x00);
+        g.present();
+        return 100;
+    }
+    pub fn onEvent(_: *Hello, ev: *const fmrb.Event) void {
+        if (ev.type == fmrb.key_down and ev.character == 'q') fmrb.app.stop();
+    }
+};
+
+comptime {
+    fmrb.exportApp(Hello);
+}
+```
+
+文字列を返す関数は、渡したバッファに書いてスライスを返す (`fmrb.app.name(&buf)`)。描く行は
+`std.fmt.bufPrint` で組み立てる。`zig/build.rb` は `zig build -Dexample=<名前>` を流す。設定は `zig/build.zig` の
+`addApp` にある: `wasm32-freestanding`、エントリポイントなし、export を残す (`rdynamic`)、`ReleaseSmall`、strip、
+16 KB のスタック。自分のプロジェクトでは、このリポジトリを `build.zig.zon` の依存に足し
+(`zig fetch --save <アーカイブの URL>`)、`b.dependency("family_mruby_sdk", .{}).module("fmrb")` でモジュールを取る。
+ほかの関数は `fmrb.raw` にある。
+
 ## 7. 動かす
 
 ### (a) Linux の sim で動かす
@@ -431,6 +523,8 @@ wasm: runtime ended (pool high mark N of 261608 bytes)                       # t
   包んでいる (描画、文字とフォント、画像、アプリの情報、時計、音、ファイル全体の FmrbFile、ログ)。ほかは
   `raw` を直接呼ぶ。
 - フックとレコードの形は暫定で、ファームウェアに合わせて変わることがある。
-- Rust と Zig のバインディングは計画中 (同じ形で生成する)。
+- Rust と Zig: 手書きの層が包むのは TinyGo と同じよく使う部分。どちらもアロケータを使わない (文字列は固定の
+  バッファで受け取る)。Rust の crate と Zig のパッケージは、crates.io やリリースのアーカイブにはまだ出していない
+  (README の「配り方」)。
 - wasm のアプリは ESP32-S3 のボードでは動かない (1 章)。
 - 開発用の遠隔操作には認証が無く、リリースビルドにはまだ入っていない (7 章の b)。

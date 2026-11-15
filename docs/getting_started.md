@@ -4,8 +4,8 @@
 
 This guide takes you from an empty machine to a TinyGo app running on Family
 mruby: on the Linux simulation, on an ESP32-P4 board over WiFi, and in the
-browser build on the web. A C app takes the same steps with its own build
-script (section 6).
+browser build on the web. A C, Rust or Zig app takes the same steps with its
+own build script (section 6).
 The app is `tinygo/examples/hello` in this repository; you can follow the
 steps with your own name instead of `hello`.
 
@@ -30,8 +30,11 @@ names, parameters, the event record, the hooks). The generator also writes
 the boundary as data (`boundary/boundary.json`), and this SDK generates the
 TinyGo package `tinygo/fmrb/raw` from it: every function, record and choice.
 The package `tinygo/fmrb` is the hand-written layer on top (the hooks and Go
-shapes for the common functions); `tools/check_bindings.rb` checks that the
-generated files match the boundary.
+shapes for the common functions). Rust and Zig have the same two layers: the
+generated `rust/src/raw/` and `zig/src/raw.zig` under the hand-written crate
+`fmrb` (`rust/src/lib.rs`) and module `fmrb` (`zig/src/fmrb.zig`).
+`tools/check_bindings.rb` checks that the generated files match the
+boundary.
 
 Where wasm apps run today:
 
@@ -51,6 +54,10 @@ Where wasm apps run today:
 - For C apps: **Zig** (its `zig cc`; checked with Zig 0.17.1), unpacked as
   `~/toolchains/zig-<version>/` (or `ZIG=` the binary), or clang with
   wasm-ld (`CC=clang`). No libc is needed.
+- For Rust apps: **Rust** with the `wasm32-unknown-unknown` target
+  (`rustup target add wasm32-unknown-unknown`; checked with Rust 1.97.0). The
+  crate has no dependencies, so nothing is downloaded.
+- For Zig apps: **Zig** 0.15 or later (checked with 0.17.1), found as for C.
 - **git**.
 - For the simulation: a Family mruby development tree (the `family-mruby`
   repository with `fmruby-core` and `fmruby-graphics-audio` fetched into it)
@@ -90,6 +97,8 @@ cd family-mruby-sdk
 | `tinygo/examples/` | sample apps (`hello`, `tour`, `bounce`); each directory is one app, its `main.go` and `.app.toml` |
 | `tinygo/build.rb` | builds one example into `<name>.app.wasm` and its `.app.toml` |
 | `c/` | the C headers (`fmrb_boundary.h`, `fmrb_sdk_version.h`), `build.rb` and `examples/tour` |
+| `rust/` | the Rust crate `fmrb` (`src/lib.rs`; `src/raw/` generated), `build.rb`, `examples/hello` and `examples/tour` |
+| `zig/` | the Zig package with the module `fmrb` (`src/fmrb.zig`; `src/raw.zig` generated), `build.zig`, `build.rb`, `examples/hello` and `examples/tour` |
 | `tools/check_bindings.rb` | checks the generated files and an app's imports against the boundary |
 | `docs/tour.md` | the `tour` sample's specification (the same app in every language) |
 
@@ -343,6 +352,100 @@ the hooks it wants (`void on_create(void)`, `int32_t on_update(void)`,
 compiler asks for them (`c/examples/tour/app.c` does). Strings are a pointer
 and a length, not NUL-terminated.
 
+### Rust
+
+```
+ruby rust/build.rb hello    # -> rust/build/hello.app.wasm and hello.app.toml
+```
+
+An app is a `no_std` library crate of type `cdylib` that depends on the SDK
+crate (`fmrb = { package = "family-mruby-sdk", path = ... }`; see
+`rust/examples/hello/Cargo.toml`). Make a type that implements `fmrb::App`
+(every hook has a default that does nothing) and `Default`, and name it once
+with `fmrb::app!(Hello);`: the macro exports the hooks and the event buffer.
+
+```rust
+#![no_std]
+use fmrb::{Event, Text, WINDOW};
+
+#[derive(Default)]
+struct Hello { count: i64 }
+
+impl fmrb::App for Hello {
+    fn on_update(&mut self) -> i32 {
+        self.count += 1;
+        WINDOW.fill_rect(0, 0, WINDOW.area_width(), WINDOW.area_height(), 0xFF);
+        WINDOW.draw_text(4, 4, Text::<32>::from("count ").int(self.count).as_str(), 0x00);
+        WINDOW.present();
+        100
+    }
+    fn on_event(&mut self, ev: &Event) {
+        if ev.kind() == fmrb::KEY_DOWN && ev.character == 'q' as i32 {
+            fmrb::app::stop();
+        }
+    }
+}
+
+fmrb::app!(Hello);
+```
+
+There is no allocator: a String the firmware gives back (`fmrb::app::name()`,
+...) comes as a `Text<N>`, a fixed buffer that also builds lines to draw
+(`push`, `int`, `core::fmt::Write`). The crate has a panic handler that
+traps (turn off its default feature `panic-handler` to bring your own).
+`rust/build.rb` runs `cargo build --release --target wasm32-unknown-unknown`
+with the release profile of `rust/Cargo.toml` (size optimisation, LTO, abort
+on panic, stripped) and `-C link-arg=-zstack-size=16384`: without the stack
+size the linker reserves 1 MiB and the app starts with 17 pages of memory.
+In a crate of your own, put the same profile in its `Cargo.toml` and the
+flag in `RUSTFLAGS` (or `.cargo/config.toml`). Everything else is in
+`fmrb::raw` (`unsafe`).
+
+### Zig
+
+```
+ruby zig/build.rb hello     # -> zig/build/hello.app.wasm and hello.app.toml
+```
+
+An app is a root file that imports the module `fmrb`, a struct whose fields
+all have defaults, with the hooks it wants as methods (`onCreate`,
+`onUpdate`, `onEvent`, ...), exported with `fmrb.exportApp`:
+
+```zig
+const fmrb = @import("fmrb");
+pub const panic = fmrb.panic; // a panic traps (keeps the app small)
+
+const Hello = struct {
+    count: i64 = 0,
+
+    pub fn onUpdate(self: *Hello) i32 {
+        self.count += 1;
+        const g = fmrb.window;
+        g.fillRect(0, 0, g.areaWidth(), g.areaHeight(), 0xFF);
+        g.drawText(4, 4, "Hello, Family mruby!", 0x00);
+        g.present();
+        return 100;
+    }
+    pub fn onEvent(_: *Hello, ev: *const fmrb.Event) void {
+        if (ev.type == fmrb.key_down and ev.character == 'q') fmrb.app.stop();
+    }
+};
+
+comptime {
+    fmrb.exportApp(Hello);
+}
+```
+
+Functions that give a String write it into a buffer you pass and return the
+slice (`fmrb.app.name(&buf)`); `std.fmt.bufPrint` builds lines to draw.
+`zig/build.rb` runs `zig build -Dexample=<name>`; the settings are in
+`addApp` of `zig/build.zig`: `wasm32-freestanding`, no entry point, the
+exports kept (`rdynamic`), `ReleaseSmall`, stripped, a 16 KB stack. In a
+project of your own, add this repository as a dependency in
+`build.zig.zon` (`zig fetch --save <archive URL>`) and take the module with
+`b.dependency("family_mruby_sdk", .{}).module("fmrb")`. Everything else is
+in `fmrb.raw`.
+
 ## 7. Run it
 
 ### (a) On the Linux simulation
@@ -486,7 +589,10 @@ it a larger pool where the device has one.
   app's information, the clock, notes, whole-file FmrbFile, the log). For the
   rest call `raw` directly.
 - The hook and record shapes are provisional and may change with the firmware.
-- Rust and Zig bindings are planned (generated the same way).
+- Rust and Zig: the hand-written layers wrap the same common part as TinyGo;
+  neither uses an allocator (strings come back into fixed buffers). The
+  Rust crate and the Zig package are not published to crates.io or as a
+  release archive yet (README, Distribution).
 - wasm apps do not run on ESP32-S3 boards (section 1).
 - The development remote control has no authentication, and release builds
   do not have it yet (section 7 b).

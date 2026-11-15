@@ -3,14 +3,16 @@
 Every language of the SDK has one sample called `tour`: hello plus a tour of
 the main functions, with **the same content and the same screen** in each
 language, so the languages can be compared line by line. This file is its
-specification; a new language's tour follows it exactly (the TinyGo one,
-`tinygo/examples/tour/main.go`, and the C one, `c/examples/tour/app.c`, are
-the references). It is modelled on fmruby-core's MicroPython demo
+specification; a new language's tour follows it exactly. The four are
+`tinygo/examples/tour/main.go`, `rust/examples/tour/src/lib.rs`,
+`zig/examples/tour/app.zig` and `c/examples/tour/app.c` (TinyGo and C were
+the first, the references). It is modelled on fmruby-core's MicroPython demo
 (`flash/app/python/python.app.py`), limited to what the boundary offers to
 every language.
 
-`hello` stays the smallest getting-started app, and TinyGo keeps `bounce` as
-a small animation demo; neither is part of this specification.
+`hello` (TinyGo, Rust, Zig) stays the smallest getting-started app, and
+TinyGo keeps `bounce` as a small animation demo; neither is part of this
+specification.
 
 ## Window and colors
 
