@@ -99,8 +99,19 @@ func onUpdate() int32 {
 	return -1
 }
 
-// The record is on the firmware's side of the call (the app's own stack,
-// below its stack pointer): copied before the app's hook sees it.
+// eventBuffer is where the firmware writes the event record before it
+// calls on_event (64 bytes, the header's FMRB_EVENT_BUFFER_SIZE). The
+// firmware asks for its address once, through fmrb_event_buffer. Without
+// it the firmware would put the record on the app's stack, and a small app
+// whose optimiser dropped the stack pointer would be refused.
+var eventBuffer [8]uint64
+
+//export fmrb_event_buffer
+func fmrbEventBuffer() unsafe.Pointer {
+	return unsafe.Pointer(&eventBuffer)
+}
+
+// The record is in eventBuffer: copied before the app's hook sees it.
 //
 //export on_event
 func onEvent(ev *Event) {

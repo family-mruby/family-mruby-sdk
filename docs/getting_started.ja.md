@@ -350,7 +350,7 @@ ruby tools/fmrb_rd_launch.rb <device-ip> /app/mine/hello.app.wasm
 | `... Exception: unreachable` などのトラップ | たいていは Go の panic (範囲外の添字、nil、メモリ不足)。そのフックの処理を見直す。`LogInfo` を挟むと場所を絞れる |
 | `No on_create, on_update or on_event in ...` | 3 つのどれも export していないので、読み込みの時点で断られた。`fmrb` パッケージでビルドした TinyGo のアプリは必ず export するので、C などほかの言語向けの話 |
 | `wasm: [<名前>] <フック> takes N and returns M values, expected ...` | フックの形が違う (古い SDK でビルドしたアプリ)。今の SDK でビルドし直す |
-| `on_event needs a stack pointer global (__stack_pointer) for its record` | モジュールにスタックポインタのグローバル変数が無く、ファームウェアがイベントのレコードを置けない。**ごく小さい TinyGo のアプリで起きる**: リニアメモリ上のスタックを使うコードが無い (実行時に文字列を組み立てない、何も確保しない) と、最適化でこの変数が消える。実行時に文字列を 1 つ組み立てれば戻る。たとえば `OnCreate` で `fmrb.LogInfo("started, pid " + fmrb.Itoa(int64(fmrb.App.Pid())))`。既知の問題で、SDK かファームウェアの側で直す予定 |
+| `on_event needs fmrb_event_buffer (the SDK's event buffer) or a stack pointer global (__stack_pointer) for its record` | 古い SDK でビルドしたアプリで、ファームウェアがイベントのレコードを置く場所が無い (最適化でスタックポインタが消えた小さいアプリ)。今の SDK でビルドし直す。`fmrb` パッケージは、ファームウェアがレコードを書き込む置き場 `fmrb_event_buffer` を export する (C のアプリはどれか 1 つのファイルに `FMRB_EVENT_BUFFER();` と書く) |
 | `... did not load: ...` / `... did not start: ...` | WAMR がモジュールを受け付けなかった。たとえばこのファームウェアに無い関数を import している (SDK がファームウェアより新しい) |
 | `wasm apps are not in this build` | その端末には WAMR が入っていない (ESP32-S3、ネイティブ版、ブラウザ版) |
 | ランチャーにアプリが出ない | ランチャーの一覧は前回の走査の結果。読み直す (タイトルバーの Reload ボタン、または F5)。パスを指定して起動してもよい |

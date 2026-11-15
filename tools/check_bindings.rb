@@ -49,8 +49,9 @@ abort "no functions read from #{header}" if c.empty?
 
 # the hooks: name => [params, result]
 hooks = { '_initialize' => [[], nil] }
-File.read(header).scan(/FMRB_EXPORT\("(\w+)"\)\s*\n\s*(\w+)\s+\w+\(([^)]*)\);/) do |name, ret, args|
+File.read(header).scan(/FMRB_EXPORT\("(\w+)"\)\s*\n\s*([\w ]+?\s*\*?)\s*\w+\(([^)]*)\);/) do |name, ret, args|
   params = args.strip == 'void' ? [] : args.split(',').map { |a| c_wasm_type(a.sub(/\w+\s*\z/, '')) }
+  ret = ret.strip
   hooks[name] = [params, ret == 'void' ? nil : c_wasm_type(ret)]
 end
 abort "no hooks read from #{header}" if hooks.size == 1
@@ -165,6 +166,10 @@ ARGV.each do |path|
     found << name
     sig = idx < imports.size ? imports[idx][2] : types[funcs[idx - imports.size]]
     errors << "#{path}: exports #{name} as #{sig.inspect}, header #{hooks[name].inspect}" if sig != hooks[name]
+  end
+  if found.include?('on_event') && !found.include?('fmrb_event_buffer')
+    puts "#{File.basename(path)}: note: on_event without fmrb_event_buffer (built with an older SDK; " \
+         'the firmware puts the record on the stack)'
   end
   puts "#{File.basename(path)}: #{s.bytesize} bytes, #{imports.size} imports (#{imports.map { |m, n, _| "#{m}.#{n}" }.join(' ')}), hooks #{found.join(' ')}"
 end
