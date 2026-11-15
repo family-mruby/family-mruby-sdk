@@ -17,6 +17,10 @@ firmware's type definitions (`sig/*.rbs` in fmruby-core). The C header in
 
 Status: experimental, follows fmruby-core's develop branch.
 
+To write your first app and run it on the simulation or a board, read
+[docs/getting_started.md](docs/getting_started.md) (in Japanese:
+[docs/getting_started.ja.md](docs/getting_started.ja.md)).
+
 ## TinyGo
 
 ```

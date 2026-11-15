@@ -13,3 +13,6 @@ WAMR が Ruby のアプリと同じアプリシェル (Window・枠・イベン�
 | `tinygo/examples/` | TinyGo のサンプルアプリ |
 
 状態: 試験的。fmruby-core の develop に追従する。
+
+最初のアプリを書いて sim やボードで動かすまでの手順は [docs/getting_started.ja.md](docs/getting_started.ja.md)
+(英語版: [docs/getting_started.md](docs/getting_started.md))。
