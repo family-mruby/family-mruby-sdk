@@ -1,0 +1,13 @@
+.{
+    // The Zig SDK of Family mruby: the module "fmrb" (src/fmrb.zig over the
+    // generated src/raw.zig). No dependencies.
+    .name = .family_mruby_sdk,
+    .version = "0.1.0",
+    .fingerprint = 0x7d187230b789c5fc,
+    .minimum_zig_version = "0.15.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
