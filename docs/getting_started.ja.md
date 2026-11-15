@@ -29,7 +29,7 @@ WebAssembly (`.app.wasm`) にコンパイルし、端末ではファームウェ
 | ESP32-P4 のボード (Modern。M5Stack Tab5 など) | 動く |
 | Linux の sim (docker) | 動く |
 | ESP32-S3 (Retro) | 動かない。起動は `wasm apps are not in this build` で断られる |
-| ネイティブ版 (Linux の 1 プロセス)、ブラウザ版 | まだ |
+| ネイティブ版 (Linux の 1 プロセス)、ブラウザ版 | 今の fmruby-core からビルドしたものなら動く (公開中のブラウザ版にはまだ入っていない) |
 
 ## 2. 用意するもの
 
@@ -352,7 +352,7 @@ ruby tools/fmrb_rd_launch.rb <device-ip> /app/mine/hello.app.wasm
 | `wasm: [<名前>] <フック> takes N and returns M values, expected ...` | フックの形が違う (古い SDK でビルドしたアプリ)。今の SDK でビルドし直す |
 | `on_event needs fmrb_event_buffer (the SDK's event buffer) or a stack pointer global (__stack_pointer) for its record` | 古い SDK でビルドしたアプリで、ファームウェアがイベントのレコードを置く場所が無い (最適化でスタックポインタが消えた小さいアプリ)。今の SDK でビルドし直す。`fmrb` パッケージは、ファームウェアがレコードを書き込む置き場 `fmrb_event_buffer` を export する (C のアプリはどれか 1 つのファイルに `FMRB_EVENT_BUFFER();` と書く) |
 | `... did not load: ...` / `... did not start: ...` | WAMR がモジュールを受け付けなかった。たとえばこのファームウェアに無い関数を import している (SDK がファームウェアより新しい) |
-| `wasm apps are not in this build` | その端末には WAMR が入っていない (ESP32-S3、ネイティブ版、ブラウザ版) |
+| `wasm apps are not in this build` | その端末には WAMR が入っていない (ESP32-S3、または wasm のアプリに対応する前のネイティブ版・ブラウザ版) |
 | ランチャーにアプリが出ない | ランチャーの一覧は前回の走査の結果。読み直す (タイトルバーの Reload ボタン、または F5)。パスを指定して起動してもよい |
 | 背景が透ける | 色が 0x01 になっている (「Window に描く」を参照) |
 | 文字や図形が出ない | `Window.Present()` を呼んでいない |

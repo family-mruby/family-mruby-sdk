@@ -35,7 +35,7 @@ Where wasm apps run today:
 | ESP32-P4 boards (Modern, e.g. M5Stack Tab5) | yes |
 | Linux simulation (the docker sim) | yes |
 | ESP32-S3 (Retro) | no: the launch is refused with `wasm apps are not in this build` |
-| Native Linux build, browser build | not yet |
+| Native Linux build, browser build | yes, when built from the current fmruby-core (the public browser build does not have it yet) |
 
 ## 2. Prerequisites
 
@@ -388,7 +388,7 @@ serial monitor); it is not sent over WiFi.
 | `wasm: [<name>] <hook> takes N and returns M values, expected ...` | a hook has the wrong shape (an app built against an older SDK). Rebuild with the current SDK |
 | `on_event needs fmrb_event_buffer (the SDK's event buffer) or a stack pointer global (__stack_pointer) for its record` | the app was built with an older SDK and has nowhere for the firmware to put the event record (a very small app whose optimiser dropped the stack pointer). Rebuild it with the current SDK: the `fmrb` package exports `fmrb_event_buffer`, the place the firmware writes the record into (a C app puts `FMRB_EVENT_BUFFER();` in one of its files) |
 | `... did not load: ...` / `... did not start: ...` | WAMR refused the module, for example it imports a function this firmware does not have (an SDK newer than the firmware) |
-| `wasm apps are not in this build` | the device has no WAMR (ESP32-S3, the native and browser builds) |
+| `wasm apps are not in this build` | the device has no WAMR (ESP32-S3, or a native or browser build made before wasm apps came to them) |
 | The app does not appear in the launcher | the launcher's list is from the last scan: reload it (the Reload button in its title bar, or F5). Or start it by path |
 | A see-through background | the color is 0x01 (see "Drawing") |
 | Text and shapes never show | `Window.Present()` is missing |
