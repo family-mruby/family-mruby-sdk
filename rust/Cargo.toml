@@ -1,0 +1,34 @@
+# The Rust SDK of Family mruby: the crate `fmrb` (src/lib.rs, hand-written)
+# over the generated bindings (src/raw/, tools/gen_bindings.rb). no_std, no
+# allocator, no dependencies. The examples are members of this workspace;
+# rust/build.rb builds them.
+[package]
+name = "family-mruby-sdk"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Write Family mruby apps in Rust (wasm32-unknown-unknown)"
+repository = "https://github.com/family-mruby/family-mruby-sdk"
+autoexamples = false
+
+[lib]
+name = "fmrb"
+path = "src/lib.rs"
+
+[features]
+default = ["panic-handler"]
+# A panic handler that traps (no_std apps need one; turn this off to bring
+# your own).
+panic-handler = []
+
+[workspace]
+members = ["examples/hello", "examples/tour"]
+
+# The settings the SDK fixes for apps (rust/build.rb adds the 16 KB stack:
+# without it the linker reserves 1 MiB and the module starts at 17 pages).
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+codegen-units = 1
+strip = true

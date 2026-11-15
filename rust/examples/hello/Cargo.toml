@@ -1,0 +1,13 @@
+# The SDK's hello example (rust/build.rb hello builds it).
+[package]
+name = "hello"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+fmrb = { package = "family-mruby-sdk", path = "../.." }
