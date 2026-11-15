@@ -11,6 +11,11 @@
 # ~/toolchains/cache. The settings the SDK fixes: the target wasm-unknown
 # (no WASI), the freeing GC (conservative, doc/wasm_apps decision 1), size
 # optimisation and no debug info.
+#
+# The .app.toml next to the .wasm gets sdk_version = this SDK's VERSION (the
+# firmware names it when it refuses an app that imports a function it does
+# not have). When there is none yet, the example's <name>.app.toml is copied
+# there first; one that is already there keeps everything else.
 require 'fileutils'
 require 'optparse'
 
@@ -44,3 +49,18 @@ cmd = [TINYGO, 'build', *FLAGS, '-o', File.expand_path(out), "./examples/#{name}
 puts cmd.join(' ')
 system(env, *cmd, chdir: TINYGO_DIR) or abort 'tinygo build failed'
 puts "#{out} (#{File.size(out)} bytes)"
+
+version = File.read(File.join(TINYGO_DIR, '..', 'VERSION')).strip
+toml_out = out.sub(/\.app\.wasm\z/, '').sub(/\.wasm\z/, '') + '.app.toml'
+toml_src = File.exist?(toml_out) ? toml_out : File.join(src, "#{name}.app.toml")
+if File.exist?(toml_src)
+  toml = File.read(toml_src)
+  line = %(sdk_version = "#{version}")
+  toml = if toml.match?(/^sdk_version\s*=.*$/)
+           toml.sub(/^sdk_version\s*=.*$/, line)
+         else
+           "#{toml.chomp}\n#{line}\n"
+         end
+  File.write(toml_out, toml)
+  puts "#{toml_out} (#{line})"
+end
