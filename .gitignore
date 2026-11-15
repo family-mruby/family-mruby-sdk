@@ -1,2 +1,7 @@
 tinygo/build/
 c/build/
+rust/build/
+rust/target/
+zig/build/
+zig/.zig-cache/
+zig/zig-out/

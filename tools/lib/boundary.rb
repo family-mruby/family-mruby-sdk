@@ -22,7 +22,10 @@ module Boundary
   OUTPUTS = {
     'tinygo/raw.go.erb' => 'tinygo/fmrb/raw/raw.go',
     'tinygo/types.go.erb' => 'tinygo/fmrb/raw/types.go',
-    'c/fmrb_sdk_version.h.erb' => 'c/fmrb_sdk_version.h'
+    'c/fmrb_sdk_version.h.erb' => 'c/fmrb_sdk_version.h',
+    'rust/raw.rs.erb' => 'rust/src/raw/mod.rs',
+    'rust/types.rs.erb' => 'rust/src/raw/types.rs',
+    'zig/raw.zig.erb' => 'zig/src/raw.zig'
   }.freeze
 
   module_function
@@ -39,7 +42,7 @@ module Boundary
   def render_all(manifest = load, ver = version)
     OUTPUTS.to_h do |tmpl, out|
       text = ERB.new(File.read(File.join(TEMPLATES, tmpl)), trim_mode: '-')
-                .result_with_hash(m: manifest, version: ver, go: Go)
+                .result_with_hash(m: manifest, version: ver, go: Go, rust: Rust, zig: Zig)
       [out, text]
     end
   end
@@ -75,6 +78,119 @@ module Boundary
     h['_initialize'] = [[], nil]
     h[manifest['event_buffer']['export']] = [[], 'i32'] if manifest['event_buffer']
     h
+  end
+
+  # The choice constants of a function, in the C header's spelling without
+  # its FMRB_ prefix: [[GFX_SET_FONT_RAW_FAMILY_JA, value, comment]]. Each
+  # language spells the name its own way.
+  def function_choices(f)
+    out = []
+    f['args'].each do |a|
+      next unless a['choices']
+
+      a['choices'].each_with_index do |v, i|
+        out << ["#{f['c_name']}_#{a['name']}_#{v}".upcase.delete_prefix('FMRB_'), i,
+                ":#{v} (#{a['name']} of #{f['ruby']})"]
+      end
+    end
+    (f['result']['choices'] || []).each_with_index do |v, i|
+      out << ["#{f['c_name']}_#{v}".upcase.delete_prefix('FMRB_'), i, ":#{v} (the result of #{f['ruby']})"]
+    end
+    out
+  end
+
+  # The choice constants of a record's fields: [[record, field, [[APP_EVENT_TYPE_KEY_DOWN, value, :key_down]]]]
+  def record_choices(manifest)
+    manifest['records'].flat_map do |r|
+      r['fields'].select { |f| f['choices'] }.map do |f|
+        stem = r['c_name'].delete_prefix('fmrb_').delete_suffix('_t')
+        [r, f, f['choices'].each_with_index.map { |v, i| ["#{stem}_#{f['name']}_#{v}".upcase, i, ":#{v}"] }]
+      end
+    end
+  end
+
+  # The parts the Rust and Zig templates share: a record's stem and type
+  # name, and the C type a pointer points to.
+  def stem(c_name) = c_name.delete_prefix('fmrb_').delete_suffix('_t')
+
+  # fmrb_app_wallclock_t -> AppWallclock
+  def type_name(c_name) = stem(c_name).split('_').map(&:capitalize).join
+
+  # "const fmrb_gfx_image_info_t *" -> [true, "fmrb_gfx_image_info_t"]
+  def pointee(ctype)
+    t = ctype.strip
+    [t.start_with?('const '), t.delete_prefix('const ').delete_suffix('*').strip]
+  end
+
+  # Names and types for the Rust templates (rust/src/raw/): functions keep
+  # the import's name (gfx_fill_rect), records are AppWallclock, constants
+  # are the C header's without FMRB_ (GFX_SET_FONT_RAW_FAMILY_JA).
+  module Rust
+    module_function
+
+    KEYWORDS = %w[as async await break const continue crate dyn else enum extern false fn for gen if impl in
+                  let loop match mod move mut pub ref return self static struct super trait true try type
+                  unsafe use where while abstract become box do final macro override priv typeof unsized
+                  virtual yield].freeze
+
+    def ident(name) = KEYWORDS.include?(name) ? "r##{name}" : name
+
+    INT = { 'int8_t' => 'i8', 'uint8_t' => 'u8', 'int16_t' => 'i16', 'uint16_t' => 'u16', 'int32_t' => 'i32',
+            'uint32_t' => 'u32', 'int64_t' => 'i64', 'uint64_t' => 'u64', 'float' => 'f32', 'double' => 'f64',
+            'char' => 'u8' }.freeze
+
+    def scalar(ctype) = INT.fetch(ctype)
+
+    # A parameter's or result's Rust type: a pointer is *const / *mut of
+    # its pointee (a String or bytes: u8; a record: its struct).
+    def param_type(ctype)
+      return scalar(ctype) unless ctype.include?('*')
+
+      const, to = Boundary.pointee(ctype)
+      "#{const ? '*const' : '*mut'} #{to.start_with?('fmrb_') ? Boundary.type_name(to) : scalar(to)}"
+    end
+  end
+
+  # Names and types for the Zig templates (zig/src/raw.zig): functions keep
+  # the import's name, records are AppWallclock (extern structs), constants
+  # are snake_case (gfx_set_font_raw_family_ja). Pointers are optional, so
+  # a size query can pass null as C passes NULL.
+  module Zig
+    module_function
+
+    KEYWORDS = %w[addrspace align allowzero and anyframe anytype asm break callconv catch comptime const
+                  continue defer else enum errdefer error export extern fn for if inline linksection noalias
+                  noinline nosuspend opaque or orelse packed pub resume return struct suspend switch test
+                  threadlocal try union unreachable var volatile while].freeze
+    # Primitive type names: a field may be called so (ev.type), a parameter
+    # may not.
+    PRIMITIVES = %w[type bool void anyopaque noreturn anyerror comptime_int comptime_float].freeze
+
+    def ident(name) = (KEYWORDS + PRIMITIVES).include?(name) ? %(@"#{name}") : name
+
+    def field_ident(name) = KEYWORDS.include?(name) ? %(@"#{name}") : name
+
+    def scalar(ctype) = Rust::INT.fetch(ctype)
+
+    # many: the pointer is to an array of records (a parameter with a count)
+    def param_type(ctype, many: false)
+      return scalar(ctype) unless ctype.include?('*')
+
+      const, to = Boundary.pointee(ctype)
+      if to.start_with?('fmrb_')
+        "?#{many ? '[*]' : '*'}#{const ? 'const ' : ''}#{Boundary.type_name(to)}"
+      else
+        "?[*]#{const ? 'const ' : ''}#{scalar(to)}"
+      end
+    end
+
+    # A function's parameters: "name: type, ..."
+    def params(f)
+      counts = f['params'].select { |p| p['role'] == 'count' }.map { |p| p['name'] }
+      f['params'].map do |p|
+        "#{ident(p['name'])}: #{param_type(p['c'], many: counts.include?("#{p['name']}_count"))}"
+      end.join(', ')
+    end
   end
 
   # Names and types for the TinyGo templates.
@@ -128,18 +244,7 @@ module Boundary
 
     # The choice constants of a function: [[Go name, value, comment]]
     def function_choices(f)
-      out = []
-      f['args'].each do |a|
-        next unless a['choices']
-
-        a['choices'].each_with_index do |v, i|
-          out << [const_name("#{f['c_name']}_#{a['name']}_#{v}".upcase), i, ":#{v} (#{a['name']} of #{f['ruby']})"]
-        end
-      end
-      (f['result']['choices'] || []).each_with_index do |v, i|
-        out << [const_name("#{f['c_name']}_#{v}".upcase), i, ":#{v} (the result of #{f['ruby']})"]
-      end
-      out
+      Boundary.function_choices(f).map { |n, v, c| [const_name(n), v, c] }
     end
   end
 end

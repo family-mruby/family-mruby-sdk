@@ -7,25 +7,37 @@
 #   ruby tools/check_bindings.rb [app.wasm ...]
 #   ruby tools/check_bindings.rb --against v0.1.0 app.wasm   # an older boundary
 #   ruby tools/check_bindings.rb --against old.json app.wasm
+#   ruby tools/check_bindings.rb --examples   # build every example, check them
 #
-# 1. Every generated file (tinygo/fmrb/raw/, c/fmrb_sdk_version.h) is what
-#    tools/gen_bindings.rb makes from boundary/boundary.json and VERSION now.
+# 1. Every generated file (tinygo/fmrb/raw/, rust/src/raw/, zig/src/raw.zig,
+#    c/fmrb_sdk_version.h) is what tools/gen_bindings.rb makes from
+#    boundary/boundary.json and VERSION now.
 # 2. c/fmrb_boundary.h (from fmruby-core) declares the same functions and
-#    hooks, with the same wasm types, and has the same ABI hash.
+#    hooks, with the same wasm types, and has the same ABI hash. The
+#    generated TinyGo, Rust and Zig declarations are read back the same way:
+#    every function with the boundary's wasm types (a check of the
+#    templates, not only of their products).
 # 3. Every "fmrb" import of each .wasm given is a function of the boundary
 #    with the same wasm type, and every hook it exports has the boundary's
 #    type. With --against, the boundary is that git tag's (or that file's)
 #    instead of the current one: "would this app run on a firmware of that
 #    version?" (a firmware refuses an app that imports what it lacks).
+#    With --examples, every example of every language (<lang>/examples/*)
+#    is built first with its language's build script into a temporary
+#    directory and checked as an app; a language whose toolchain is missing
+#    is skipped with a note.
 # Exit status 1 on any difference.
 require 'optparse'
 require 'open3'
+require 'tmpdir'
 require_relative 'lib/boundary'
 
 against = nil
+examples = false
 OptionParser.new do |o|
-  o.banner = 'usage: check_bindings.rb [--against TAG|FILE] [app.wasm ...]'
+  o.banner = 'usage: check_bindings.rb [--against TAG|FILE] [--examples] [app.wasm ...]'
   o.on('--against REF', 'check the apps against an older boundary (a git tag or a boundary.json)') { |v| against = v }
+  o.on('--examples', 'build every example of every language and check them too') { examples = true }
 end.parse!
 
 errors = []
@@ -57,6 +69,36 @@ errors << 'c/fmrb_boundary.h: functions differ from boundary.json' if c_funcs !=
 errors << 'c/fmrb_boundary.h: hooks differ from boundary.json' if c_hooks != Boundary.hook_sigs(manifest)
 puts "c/fmrb_boundary.h: #{c_funcs.size} functions, #{c_hooks.size - 1} hooks"
 
+# ---- 2b. the generated declarations of the other languages, read back
+WASM_OF_LANG = {
+  # a language's type spelling => wasm type (pointers are i32 on wasm32)
+  'go' => ->(t) { { 'int64' => 'i64', 'uint64' => 'i64', 'float64' => 'f64', 'float32' => 'f32' }.fetch(t, 'i32') },
+  'rust' => ->(t) { t.start_with?('*') ? 'i32' : { 'i64' => 'i64', 'u64' => 'i64', 'f64' => 'f64', 'f32' => 'f32' }.fetch(t, 'i32') },
+  'zig' => ->(t) { t.start_with?('?', '*', '[') ? 'i32' : { 'i64' => 'i64', 'u64' => 'i64', 'f64' => 'f64', 'f32' => 'f32' }.fetch(t, 'i32') }
+}.freeze
+DECLS = {
+  'tinygo/fmrb/raw/raw.go' => ['go', %r{^//go:wasmimport (\w+) (\w+)\nfunc \w+\(([^)]*)\) (\S+)$}],
+  'rust/src/raw/mod.rs' => ['rust', /^    pub fn (\w+)\(([^)]*)\) -> ([^;]+);$/],
+  'zig/src/raw.zig' => ['zig', /^pub extern "(\w+)" fn (\w+)\(([^)]*)\) (\S+);$/]
+}.freeze
+DECLS.each do |path, (lang, re)|
+  full = File.join(Boundary::ROOT, path)
+  next unless File.exist?(full)
+
+  wasm = WASM_OF_LANG.fetch(lang)
+  got = {}
+  File.read(full).scan(re) do |*caps|
+    caps = caps.flatten
+    caps.unshift(manifest['import_module']) if lang == 'rust' # the module is the block's link attribute
+    mod, name, args, ret = caps
+    errors << "#{path}: #{name} imports from #{mod}" if mod != manifest['import_module']
+    types = args.strip.empty? ? [] : args.split(', ').map { |a| lang == 'go' ? a.split(' ', 2).last : a.split(': ', 2).last }
+    got[name] = [types.map { |t| wasm.call(t.strip) }, wasm.call(ret.strip)]
+  end
+  errors << "#{path}: functions differ from boundary.json" if got != Boundary.import_sigs(manifest)
+  puts "#{path}: #{got.size} functions"
+end
+
 # ---- 3. apps
 if against
   path = against
@@ -85,7 +127,30 @@ end
 
 VT = { 0x7f => 'i32', 0x7e => 'i64', 0x7d => 'f32', 0x7c => 'f64' }.freeze
 
-ARGV.each do |path|
+apps = ARGV.dup
+tmp = nil
+if examples
+  tmp = Dir.mktmpdir('fmrb-examples')
+  Dir[File.join(Boundary::ROOT, '*', 'build.rb')].sort.each do |script|
+    lang = File.basename(File.dirname(script))
+    Dir[File.join(Boundary::ROOT, lang, 'examples', '*')].sort.each do |dir|
+      next unless File.directory?(dir)
+
+      name = File.basename(dir)
+      out = File.join(tmp, lang, "#{name}.app.wasm")
+      log, st = Open3.capture2e(RbConfig.ruby, script, name, '-o', out)
+      if st.success?
+        apps << out
+      elsif log.match?(/\bno (TinyGo|zig)\b|cargo build failed|No such file or directory - cargo/)
+        puts "#{lang}/#{name}: skipped (#{log.lines.last.strip})"
+      else
+        errors << "#{lang}/#{name}: build failed:\n#{log.lines.last(15).join}"
+      end
+    end
+  end
+end
+
+apps.each do |path|
   s = File.binread(path)
   abort "#{path}: not wasm" unless s[0, 4] == "\0asm"
   i = 8
@@ -158,9 +223,12 @@ ARGV.each do |path|
     puts "#{File.basename(path)}: note: on_event without #{buf} (built with an older SDK; " \
          'the firmware puts the record on the stack)'
   end
-  puts "#{File.basename(path)}: #{s.bytesize} bytes, #{imports.size} imports " \
+  label = tmp && path.start_with?(tmp) ? path.delete_prefix("#{tmp}/") : File.basename(path)
+  puts "#{label}: #{s.bytesize} bytes, #{imports.size} imports " \
        "(#{imports.map { |_, n, _| n }.join(' ')}), hooks #{found.join(' ')}"
 end
+
+FileUtils.rm_rf(tmp) if tmp
 
 if errors.empty?
   puts 'ok'
