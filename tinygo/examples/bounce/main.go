@@ -21,7 +21,9 @@ var palette = [...][3]int32{
 var bg, fg int32
 
 func (b *bounce) OnCreate() {
-	bg = fmrb.RGB(0, 0, 64)
+	// 0x01 is the canvas color key (transparent), so the background must not
+	// round to it: (0, 0, 64) does, (0, 0, 128) is 0x02.
+	bg = fmrb.RGB(0, 0, 128)
 	fg = fmrb.RGB(255, 255, 255)
 	b.w, b.h = fmrb.Window.AreaWidth(), fmrb.Window.AreaHeight()
 	b.x, b.y, b.dx, b.dy = 4, 24, 2, 1
