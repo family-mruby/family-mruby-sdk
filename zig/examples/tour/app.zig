@@ -36,17 +36,16 @@ const voice_file = "/usr/share/sounds/voice/mahjong/default/pon.wav";
 const dir = "/home/tour";
 const sample_ja = "\u{3053}\u{3093}\u{306b}\u{3061}\u{306f} ABC \u{65e5}\u{672c}\u{8a9e}"; // konnichiwa ABC nihongo
 
-const Page = enum(usize) { shapes, text, image, sprites, tiles, sound, sound_plus, files, input, system, system_plus };
-const n_pages = 11;
-const pages = [n_pages][]const u8{ "Shapes", "Text", "Image", "Sprites", "Tiles", "Sound", "Sound+", "Files", "Input", "System", "System+" };
+const Page = enum(usize) { shapes, text, image, sprites, tiles, sound, files, input, system, system_plus };
+const n_pages = 10;
+const pages = [n_pages][]const u8{ "Shapes", "Text", "Image", "Sprites", "Tiles", "Sound", "Files", "Input", "System", "System+" };
 const keys = [n_pages][]const u8{
     "click, arrows, 1-9, 0: pages  q: quit",
     "T: font",
     "I: show / hide the picture",
     "H: hide / show one  P: pause",
     "arrows: pages  q: quit",
-    "S: scale  B: beep  X: stop",
-    "M: tune on / off  V: voice",
+    "S B: notes  M: tune  V: voice  X: off",
     "W: append  D: delete count.txt",
     "drag: draw  type  BS: clear",
     "arrows: pages  q: quit",
@@ -145,15 +144,14 @@ const Tour = struct {
         g.fillRect(0, 0, w, h, paper);
         const p = @backingInt(self.page);
         var buf: [64]u8 = undefined;
-        text(4, 2, line(&buf, "{d}/11 {s}", .{ p + 1, pages[p] }), ink);
+        text(4, 2, line(&buf, "{d}/10 {s}", .{ p + 1, pages[p] }), ink);
         switch (self.page) {
             .shapes => drawShapes(),
             .text => self.drawText(),
             .image => self.drawImage(),
             .sprites => self.drawSprites(),
             .tiles => self.drawTiles(),
-            .sound => drawSound(),
-            .sound_plus => self.drawSoundPlus(),
+            .sound => self.drawSound(),
             .files => self.drawFiles(),
             .input => self.drawInput(),
             .system => self.drawSystem(),
@@ -167,10 +165,7 @@ const Tour = struct {
     fn setPage(self: *Tour, p: usize) void {
         switch (self.page) {
             .sprites => self.showSprites(false),
-            .sound_plus => if (std.mem.eql(u8, self.tune, "playing")) {
-                fmrb.audio.stop();
-                self.tune = "stopped";
-            },
+            .sound => self.stopTune(),
             .files => cleanFiles(),
             else => {},
         }
@@ -368,26 +363,34 @@ const Tour = struct {
         }
     }
 
-    // ---- page 7: a tune and a voice
+    // the tune and the voice
 
-    fn drawSoundPlus(self: *Tour) void {
+    fn drawSound(self: *Tour) void {
         var bufs: [2][64]u8 = undefined;
         const rows = [_][]const u8{
+            "S: a scale on pulse 1",
+            "B: a beep on pulse 2",
             "M: korobeiniki (FMSQ) on / off",
             "V: a voice (WAV)",
+            "X: stop it all",
             "",
             line(&bufs[0], "tune   {s}", .{self.tune}),
             line(&bufs[1], "voice  {s}", .{self.voice}),
         };
         for (rows, 0..) |r, i| text(6, y0 + 6 + @as(i32, @intCast(i)) * 12, r, ink);
-        text(6, y0 + 78, tune_src, ink_sub);
-        text(6, y0 + 90, "voice/mahjong/default/pon.wav", ink_sub);
+        text(6, y0 + 114, "notes end by the clock", ink_sub);
+    }
+
+    fn stopTune(self: *Tour) void {
+        if (std.mem.eql(u8, self.tune, "playing")) {
+            fmrb.audio.stop();
+            self.tune = "stopped";
+        }
     }
 
     fn toggleTune(self: *Tour) void {
         if (std.mem.eql(u8, self.tune, "playing")) {
-            fmrb.audio.stop();
-            self.tune = "stopped";
+            self.stopTune();
             return;
         }
         if (!self.tune_loaded) {
@@ -407,7 +410,7 @@ const Tour = struct {
         self.voice = if (r == 1) "played" else if (r == 0) "not on this machine" else "failed";
     }
 
-    // ---- page 8: files
+    // ---- page 7: files
 
     fn drawFiles(self: *Tour) void {
         var bufs: [7][64]u8 = undefined;
@@ -460,7 +463,7 @@ const Tour = struct {
         }
     }
 
-    // ---- page 9: input
+    // ---- page 8: input
 
     fn drawInput(self: *Tour) void {
         text(6, y0 + 4, "drag inside the box to draw", ink_sub);
@@ -501,7 +504,7 @@ const Tour = struct {
         self.n_typed += 1;
     }
 
-    // ---- page 10: the system side
+    // ---- page 9: the system side
 
     fn drawSystem(self: *Tour) void {
         var bufs: [8][64]u8 = undefined;
@@ -618,13 +621,13 @@ const Tour = struct {
                     self.scale_at = fmrb.uptimeMs();
                 },
                 0x05 => self.note(1, 988, 90, 14), // B
-                0x1B => self.silence(), // X
+                0x10 => self.toggleTune(), // M
+                0x19 => self.playVoice(), // V
+                0x1B => { // X
+                    self.silence();
+                    self.stopTune();
+                },
                 else => {},
-            },
-            .sound_plus => if (sc == 0x10) { // M
-                self.toggleTune();
-            } else if (sc == 0x19) { // V
-                self.playVoice();
             },
             .files => self.fileKey(sc),
             .input => if (sc == 0x2A) { // backspace
@@ -728,14 +731,7 @@ fn tile(sheet: fmrb.SpriteImage, i: i32, x: i32, y: i32) void {
     g.drawTile(sheet, 16 * @mod(i, 4), 16 * @divTrunc(i, 4), 16, 16, x, y);
 }
 
-// ---- page 6: sound
-
-fn drawSound() void {
-    const rows = [_][]const u8{ "S: a scale on pulse 1", "B: a beep on pulse 2", "X: stop", "", "notes end by the clock" };
-    for (rows, 0..) |r, i| text(6, y0 + 6 + @as(i32, @intCast(i)) * 12, r, if (i == 4) ink_sub else ink);
-}
-
-// ---- page 8: files
+// ---- page 7: files
 
 fn setupFiles() void {
     _ = fmrb.file.mkdir(dir);
@@ -748,13 +744,13 @@ fn cleanFiles() void {
     _ = fmrb.file.delete(dir);
 }
 
-// ---- page 9: input
+// ---- page 8: input
 
 fn inPad(x: i32, y: i32) bool {
     return x > 6 and x < 221 and y > y0 + 16 and y < y0 + 99;
 }
 
-// ---- page 11: the clipboard, the clock, the app's wasm numbers
+// ---- page 10: the clipboard, the clock, the app's wasm numbers
 
 fn sysY(i: i32) i32 {
     return y0 + 6 + i * 11;

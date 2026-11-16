@@ -1,43 +1,24 @@
 /*
  * tour: hello plus a tour of the main functions, one page at a time --
- * shapes, text (Japanese too), a picture, sprites, tiles, sound, a tune and
- * a voice, files, pointer and keys, and the system side (the app's
- * information, clocks, memory, the clipboard, its own wasm numbers). Every
- * SDK language has this same app with the same screen (tinygo/examples/tour
- * is the TinyGo one), so the languages can be compared line by line; the
- * common specification is in docs/tour.md.
+ * shapes, text (Japanese too), a picture, sprites, tiles, sound (notes, a
+ * tune and a voice), files, pointer and keys, and the system side (the
+ * app's information, clocks, memory, the clipboard, its own wasm numbers).
+ * Every SDK language has this same app with the same screen
+ * (tinygo/examples/tour is the TinyGo one), so the languages can be
+ * compared line by line; the common specification is in docs/tour.md.
  *
  *   click, arrows, 1-9, 0   change page
  *   q                       quit
  *   the page's own keys are listed at its bottom
  *
- * It calls the boundary's flat functions (fmrb_boundary.h) directly, with no
- * libc: freestanding wasm, built by c/build.rb (or its Makefile) with zig cc.
+ * It uses the SDK's C helpers (fmrb.h: C strings, a text buffer, the
+ * receivers) on top of the generated flat functions (fmrb_boundary.h), with
+ * no libc: freestanding wasm, built by c/build.rb (or a Makefile) with zig cc.
  */
-#include <stdint.h>
-#include "fmrb_boundary.h"
-#include "fmrb_sdk_version.h"
+#include "fmrb.h"
 
-/* Once in the app: the place the firmware writes on_event's record into,
-   and the SDK version (the custom section "fmrb.sdk"). */
-FMRB_EVENT_BUFFER();
-FMRB_SDK_VERSION_SECTION();
-
-/* The compiler may call these for copies and clears; with no libc the app
-   brings its own (an import of env.memcpy would be refused at load). */
-void *memcpy(void *d, const void *s, unsigned long n)
-{
-    uint8_t *dp = d;
-    const uint8_t *sp = s;
-    while (n--) *dp++ = *sp++;
-    return d;
-}
-void *memset(void *d, int c, unsigned long n)
-{
-    uint8_t *dp = d;
-    while (n--) *dp++ = (uint8_t)c;
-    return d;
-}
+/* Once in the app: the event buffer, the SDK version, memcpy and memset. */
+FMRB_APP_SETUP();
 
 /* The page is white and the palette is picked for contrast against it
    (RGB332, RRRGGGBB). 0x01 would be the transparent key: not used. */
@@ -46,9 +27,8 @@ enum {
     C_RED = 0xC0, C_GREEN = 0x0C, C_BLUE = 0x02, C_ORANGE = 0xE8,
     C_TEAL = 0x0F, C_PANEL = 0xB6, C_SKY = 0x9B,
 };
-#define WINDOW 0 /* the window's drawer */
-#define AUDIO 0  /* the app's sound */
-#define Y0 14    /* the top of a page's body */
+#define G FMRB_WINDOW
+#define Y0 14 /* the top of a page's body */
 
 #define CACHE "/cache/app/tour/"
 #define PICTURE "/usr/share/asterism/icon.png"
@@ -60,10 +40,9 @@ enum {
 static const char SAMPLE_JA[] = "\xe3\x81\x93\xe3\x82\x93\xe3\x81\xab\xe3\x81\xa1\xe3\x81\xaf ABC "
                                 "\xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e";
 
-enum { P_SHAPES, P_TEXT, P_IMAGE, P_SPRITES, P_TILES, P_SOUND, P_SOUND_PLUS,
-       P_FILES, P_INPUT, P_SYSTEM, P_SYSTEM_PLUS, N_PAGES };
+enum { P_SHAPES, P_TEXT, P_IMAGE, P_SPRITES, P_TILES, P_SOUND, P_FILES, P_INPUT, P_SYSTEM, P_SYSTEM_PLUS, N_PAGES };
 static const char *const PAGES[N_PAGES] = {
-    "Shapes", "Text", "Image", "Sprites", "Tiles", "Sound", "Sound+", "Files", "Input", "System", "System+",
+    "Shapes", "Text", "Image", "Sprites", "Tiles", "Sound", "Files", "Input", "System", "System+",
 };
 static const char *const KEYS[N_PAGES] = {
     "click, arrows, 1-9, 0: pages  q: quit",
@@ -71,8 +50,7 @@ static const char *const KEYS[N_PAGES] = {
     "I: show / hide the picture",
     "H: hide / show one  P: pause",
     "arrows: pages  q: quit",
-    "S: scale  B: beep  X: stop",
-    "M: tune on / off  V: voice",
+    "S B: notes  M: tune  V: voice  X: off",
     "W: append  D: delete count.txt",
     "drag: draw  type  BS: clear",
     "arrows: pages  q: quit",
@@ -90,6 +68,7 @@ static const char *const TILE_MAP[4] = {
 static const char *const TUNE_STATES[] = { "stopped", "playing", "cannot load" };
 static const char *const VOICE_STATES[] = { "-", "played", "not on this machine", "failed" };
 static const char *const FILE_STATES[] = { "-", "appended", "deleted count.txt", "no count.txt" };
+enum { TUNE_STOPPED, TUNE_PLAYING, TUNE_CANNOT_LOAD };
 
 #define MAX_POINTS 256
 
@@ -98,13 +77,13 @@ static int64_t started, scale_at, note_off_at[2], second;
 static int32_t blink;
 static int32_t img_tried, img_ok, img_shown = 1;
 static fmrb_gfx_image_info_t img;
-static char input[32] = "-"; /* the last input */
+static fmrb_text_t input; /* the last input */
 /* sprites */
 static int32_t spr_tried, spr_ok, sprites[4], sx[4], sy[4], step, paused, hidden0;
 static int32_t dx[4] = { 2, -2, 3, -3 }, dy[4] = { 1, 2, -1, -2 };
 /* tiles */
 static int32_t sheet_tried, sheet; /* sheet: the sprite image, 0 for none */
-/* a tune and a voice */
+/* the tune and the voice */
 static int32_t tune_loaded, tune, voice;
 /* files */
 static int32_t file_last;
@@ -115,44 +94,7 @@ static uint8_t p_start[MAX_POINTS]; /* the first point of a stroke */
 static char typed[31];
 static int32_t n_typed;
 
-/* ---- strings, without libc */
-
-static int32_t len(const char *s)
-{
-    int32_t n = 0;
-    while (s[n]) n++;
-    return n;
-}
-
-/* A small text buffer: put appends and keeps it NUL-terminated. */
-typedef struct { char s[64]; int32_t n; } buf_t;
-
-static void put(buf_t *b, const char *s)
-{
-    while (*s && b->n < (int32_t)sizeof(b->s) - 1) b->s[b->n++] = *s++;
-    b->s[b->n] = '\0';
-}
-
-static void put_int(buf_t *b, int64_t v)
-{
-    char tmp[21];
-    int32_t t = 0;
-    uint64_t u = v < 0 ? (uint64_t)(-v) : (uint64_t)v;
-    do { tmp[t++] = (char)('0' + u % 10); u /= 10; } while (u);
-    if (v < 0) put(b, "-");
-    while (t) { char c[2] = { tmp[--t], 0 }; put(b, c); }
-}
-
-static void put2(buf_t *b, int32_t v)
-{
-    if (v < 10) put(b, "0");
-    put_int(b, v);
-}
-
-static void text(int32_t x, int32_t y, const char *s, int32_t color)
-{
-    fmrb_gfx_draw_text_raw(WINDOW, x, y, s, len(s), color, PAPER, 0);
-}
+static void text(int32_t x, int32_t y, const char *s, int32_t color) { fmrb_draw_text_s(G, x, y, s, color, PAPER); }
 
 /* A label and its value on one row. */
 static void row(int32_t x, int32_t vx, int32_t y, const char *label, const char *value)
@@ -161,30 +103,9 @@ static void row(int32_t x, int32_t vx, int32_t y, const char *label, const char 
     text(vx, y, value, INK);
 }
 
-static void log_info(const char *s) { fmrb_log_info_raw(s, len(s)); }
-static void log_warn(const char *s) { fmrb_log_warn_raw(s, len(s)); }
-
-static int32_t sync_file(const char *src, const char *dest)
-{
-    return fmrb_gfx_sync_file_raw(WINDOW, src, len(src), dest, len(dest)) == 1;
-}
-
 static const char *platform(void)
 {
     return fmrb_app_platform() == FMRB_APP_PLATFORM_ESP32 ? "esp32" : "linux";
-}
-
-/* A function that writes a String into the caller's buffer, into b. */
-static void put_read(buf_t *b, int32_t n, const char *s)
-{
-    char c[2] = { 0, 0 };
-    for (int32_t i = 0; i < n && i < (int32_t)sizeof(b->s) - 1; i++) { c[0] = s[i]; put(b, c); }
-}
-
-static void language(buf_t *b)
-{
-    char l[16];
-    put_read(b, fmrb_app_language(l, sizeof(l)), l);
 }
 
 /* ---- page 1: shapes */
@@ -216,14 +137,14 @@ static double cos_deg(int32_t deg) { return sin_deg(deg + 90); }
 static void draw_shapes(void)
 {
     /* left: the filled shapes, 57 x 25, 7 apart */
-    fmrb_gfx_fill_rect(WINDOW, 10, 22, 57, 25, C_BLUE);
-    fmrb_gfx_fill_round_rect(WINDOW, 10, 54, 57, 25, 6, C_TEAL);
-    fmrb_gfx_fill_ellipse(WINDOW, 38, 98, 28, 12, C_ORANGE);
-    fmrb_gfx_fill_triangle(WINDOW, 10, 142, 66, 142, 38, 118, C_RED);
+    fmrb_gfx_fill_rect(G, 10, 22, 57, 25, C_BLUE);
+    fmrb_gfx_fill_round_rect(G, 10, 54, 57, 25, 6, C_TEAL);
+    fmrb_gfx_fill_ellipse(G, 38, 98, 28, 12, C_ORANGE);
+    fmrb_gfx_fill_triangle(G, 10, 142, 66, 142, 38, 118, C_RED);
     /* centre: concentric circles, 8 apart */
     static const int32_t rings[4] = { C_RED, C_ORANGE, C_TEAL, C_BLUE };
-    for (int32_t i = 0; i < 4; i++) fmrb_gfx_draw_circle(WINDOW, 114, 82, (i + 1) * 8, rings[i]);
-    fmrb_gfx_fill_circle(WINDOW, 114, 82, 3, C_RED);
+    for (int32_t i = 0; i < 4; i++) fmrb_gfx_draw_circle(G, 114, 82, (i + 1) * 8, rings[i]);
+    fmrb_gfx_fill_circle(G, 114, 82, 3, C_RED);
     /* right: a regular hexagon around (190, 82), r 32, pointing up */
     enum { CX = 190, CY = 82, R = 32 };
     int32_t vx[6], vy[6];
@@ -232,12 +153,10 @@ static void draw_shapes(void)
         vx[k] = CX + round_i(R * cos_deg(a));
         vy[k] = CY + round_i(R * sin_deg(a));
     }
-    for (int32_t k = 0; k < 3; k++) fmrb_gfx_draw_line(WINDOW, vx[k], vy[k], vx[k + 3], vy[k + 3], C_TEAL);
-    fmrb_gfx_draw_circle(WINDOW, CX, CY, (int32_t)(R * cos_deg(30)) - 1, C_ORANGE); /* inside, 1 dot clear */
-    for (int32_t k = 0; k < 6; k++) {
-        fmrb_gfx_draw_line(WINDOW, vx[k], vy[k], vx[(k + 1) % 6], vy[(k + 1) % 6], C_BLUE);
-    }
-    fmrb_gfx_fill_circle(WINDOW, CX, CY, 3, C_RED);
+    for (int32_t k = 0; k < 3; k++) fmrb_gfx_draw_line(G, vx[k], vy[k], vx[k + 3], vy[k + 3], C_TEAL);
+    fmrb_gfx_draw_circle(G, CX, CY, (int32_t)(R * cos_deg(30)) - 1, C_ORANGE); /* inside, 1 dot clear */
+    for (int32_t k = 0; k < 6; k++) fmrb_gfx_draw_line(G, vx[k], vy[k], vx[(k + 1) % 6], vy[(k + 1) % 6], C_BLUE);
+    fmrb_gfx_fill_circle(G, CX, CY, 3, C_RED);
 }
 
 /* ---- page 2: text */
@@ -249,21 +168,23 @@ static void draw_text(void)
     if (font_mode == 0) {
         text(6, Y0 + 20, "ABC abc 123", C_BLUE);
     } else if (font_mode == 1) {
-        fmrb_gfx_set_font_raw(WINDOW, FMRB_GFX_SET_FONT_RAW_FAMILY_JA, 12);
+        fmrb_gfx_set_font_raw(G, FMRB_GFX_SET_FONT_RAW_FAMILY_JA, 12);
         text(6, Y0 + 20, SAMPLE_JA, C_BLUE);
-        fmrb_gfx_set_font_raw(WINDOW, FMRB_GFX_SET_FONT_RAW_FAMILY_DEFAULT, 0);
+        fmrb_gfx_set_font_raw(G, FMRB_GFX_SET_FONT_RAW_FAMILY_DEFAULT, 0);
     } else {
-        fmrb_gfx_draw_text_raw(WINDOW, 6, Y0 + 20, SAMPLE_JA, len(SAMPLE_JA), C_BLUE, PAPER, 1);
+        fmrb_draw_text_mixed_s(G, 6, Y0 + 20, SAMPLE_JA, C_BLUE, PAPER);
     }
     int32_t sum = 0;
     for (int32_t i = 1; i <= 10; i++) sum += i;
-    buf_t rows[5] = { 0 };
-    put(&rows[0], "language "); language(&rows[0]);
-    put(&rows[1], "sum(1..10) = "); put_int(&rows[1], sum);
-    put(&rows[2], "2^16 = "); put_int(&rows[2], 1 << 16);
-    put(&rows[3], "area "); put_int(&rows[3], fmrb_gfx_area_width(WINDOW));
-    put(&rows[3], "x"); put_int(&rows[3], fmrb_gfx_area_height(WINDOW));
-    put(&rows[4], "SDK " FMRB_SDK_VERSION);
+    char lang[16];
+    fmrb_app_language_s(lang, sizeof(lang));
+    fmrb_text_t rows[5] = { 0 };
+    fmrb_put(fmrb_put(&rows[0], "language "), lang);
+    fmrb_put_int(fmrb_put(&rows[1], "sum(1..10) = "), sum);
+    fmrb_put_int(fmrb_put(&rows[2], "2^16 = "), 1 << 16);
+    fmrb_put_int(fmrb_put(fmrb_put_int(fmrb_put(&rows[3], "area "), fmrb_gfx_area_width(G)), "x"),
+                 fmrb_gfx_area_height(G));
+    fmrb_put(&rows[4], "SDK " FMRB_SDK_VERSION);
     for (int32_t i = 0; i < 5; i++) text(6, Y0 + 40 + i * 10, rows[i].s, INK);
 }
 
@@ -273,20 +194,18 @@ static void draw_image(void)
 {
     if (!img_tried) {
         img_tried = 1;
-        if (sync_file(PICTURE, CACHE "icon.png")) {
-            img_ok = fmrb_gfx_create_image(WINDOW, CACHE "icon.png", len(CACHE "icon.png"), &img) == 1;
-        }
-        if (!img_ok) log_warn("tour: no picture from " PICTURE);
+        if (fmrb_sync_file_s(G, PICTURE, CACHE "icon.png")) img_ok = fmrb_create_image_s(G, CACHE "icon.png", &img);
+        if (!img_ok) fmrb_log_warn_s("tour: no picture from " PICTURE);
     }
     text(6, Y0 + 6, PICTURE, INK_SUB);
     if (!img_ok) {
         text(6, Y0 + 20, "no picture", C_RED);
         return;
     }
-    if (img_shown) fmrb_gfx_draw_image_raw(WINDOW, img.id, 6, Y0 + 20, 2.0, 0.0);
-    buf_t a = { 0 }, b = { 0 };
-    put(&a, "id "); put_int(&a, img.id);
-    put_int(&b, img.width); put(&b, "x"); put_int(&b, img.height); put(&b, " px, x2");
+    if (img_shown) fmrb_gfx_draw_image_raw(G, img.id, 6, Y0 + 20, 2.0, 0.0);
+    fmrb_text_t a = { 0 }, b = { 0 };
+    fmrb_put_int(fmrb_put(&a, "id "), img.id);
+    fmrb_put(fmrb_put_int(fmrb_put(fmrb_put_int(&b, img.width), "x"), img.height), " px, x2");
     text(80, Y0 + 20, a.s, INK);
     text(80, Y0 + 32, b.s, INK);
 }
@@ -296,12 +215,10 @@ static void draw_image(void)
 /* Syncs a picture and reads it into a new sprite image: its id, 0 for none. */
 static int32_t load_sprite(const char *src, const char *name, int32_t w, int32_t h)
 {
-    buf_t dest = { 0 };
-    put(&dest, CACHE); put(&dest, name);
-    if (!sync_file(src, dest.s)) return 0;
-    int32_t id = fmrb_gfx_create_sprite_image(WINDOW, w, h, 0x00, 1);
-    if (id <= 0) return 0;
-    return fmrb_gfx_load_sprite_image(WINDOW, id, dest.s, dest.n) >= 0 ? id : 0;
+    fmrb_text_t dest = { 0 };
+    fmrb_put(fmrb_put(&dest, CACHE), name);
+    if (!fmrb_sync_file_s(G, src, dest.s)) return 0;
+    return fmrb_load_sprite_image_s(G, w, h, 0x00, 1, dest.s);
 }
 
 static void setup_sprites(void)
@@ -309,14 +226,13 @@ static void setup_sprites(void)
     spr_tried = 1;
     uint16_t imgs[4];
     for (int32_t i = 0; i < 4; i++) {
-        buf_t src = { 0 }, name = { 0 };
-        put(&src, "/usr/share/sprites/shooter/"); put(&src, SPRITE_FILES[i]); put(&src, ".png");
-        put(&name, SPRITE_FILES[i]); put(&name, ".png");
+        fmrb_text_t src = { 0 }, name = { 0 };
+        fmrb_put(fmrb_put(fmrb_put(&src, "/usr/share/sprites/shooter/"), SPRITE_FILES[i]), ".png");
+        fmrb_put(fmrb_put(&name, SPRITE_FILES[i]), ".png");
         int32_t id = load_sprite(src.s, name.s, 16, 12);
         if (!id) {
-            buf_t b = { 0 };
-            put(&b, "tour: no sprite "); put(&b, SPRITE_FILES[i]);
-            log_warn(b.s);
+            fmrb_text_t b = { 0 };
+            fmrb_log_warn_s(fmrb_put(fmrb_put(&b, "tour: no sprite "), SPRITE_FILES[i])->s);
             return;
         }
         imgs[i] = (uint16_t)id;
@@ -324,9 +240,9 @@ static void setup_sprites(void)
     for (int32_t k = 0; k < 4; k++) {
         sx[k] = 16 + 52 * k;
         sy[k] = Y0 + 24 + 20 * k;
-        sprites[k] = fmrb_gfx_create_sprite_instance(WINDOW, &imgs[k % 2 ? 2 : 0], 2, sx[k], sy[k], k);
+        sprites[k] = fmrb_gfx_create_sprite_instance(G, &imgs[k % 2 ? 2 : 0], 2, sx[k], sy[k], k);
         if (sprites[k] <= 0) {
-            log_warn("tour: cannot place a sprite");
+            fmrb_log_warn_s("tour: cannot place a sprite");
             return;
         }
     }
@@ -336,15 +252,15 @@ static void setup_sprites(void)
 static void show_sprites(int32_t on)
 {
     if (!spr_ok) return;
-    for (int32_t k = 0; k < 4; k++) fmrb_gfx_set_sprite_visible(WINDOW, sprites[k], on && !(k == 0 && hidden0));
+    for (int32_t k = 0; k < 4; k++) fmrb_gfx_set_sprite_visible(G, sprites[k], on && !(k == 0 && hidden0));
 }
 
 static void sprite_status(void)
 {
-    buf_t b = { 0 };
-    put(&b, "step "); put_int(&b, step);
-    put(&b, paused ? "  paused" : "  moving");
-    put(&b, hidden0 ? "  1: hidden  " : "  1: shown  ");
+    fmrb_text_t b = { 0 };
+    fmrb_put_int(fmrb_put(&b, "step "), step);
+    fmrb_put(&b, paused ? "  paused" : "  moving");
+    fmrb_put(&b, hidden0 ? "  1: hidden  " : "  1: shown  ");
     text(6, Y0 + 124, b.s, INK);
 }
 
@@ -356,7 +272,7 @@ static void draw_sprites(void)
         return;
     }
     text(6, Y0 + 4, "4 sprites, 2 frames each", INK_SUB);
-    fmrb_gfx_draw_rect(WINDOW, 6, Y0 + 16, 216, 104, INK_SUB);
+    fmrb_gfx_draw_rect(G, 6, Y0 + 16, 216, 104, INK_SUB);
     sprite_status();
 }
 
@@ -374,14 +290,14 @@ static void step_sprites(void)
     for (int32_t k = 0; k < 4; k++) {
         bounce(&sx[k], &dx[k], 7, 205);
         bounce(&sy[k], &dy[k], Y0 + 17, Y0 + 107);
-        fmrb_gfx_move_sprite(WINDOW, sprites[k], sx[k], sy[k]);
+        fmrb_gfx_move_sprite(G, sprites[k], sx[k], sy[k]);
     }
     step++;
     if (step % 4 == 0) {
-        for (int32_t k = 0; k < 4; k++) fmrb_gfx_set_sprite_frame(WINDOW, sprites[k], step / 4 % 2);
+        for (int32_t k = 0; k < 4; k++) fmrb_gfx_set_sprite_frame(G, sprites[k], step / 4 % 2);
     }
     sprite_status();
-    fmrb_gfx_present_raw(WINDOW, 0, 0, 0);
+    fmrb_present(G);
 }
 
 /* ---- page 5: tiles */
@@ -389,7 +305,7 @@ static void step_sprites(void)
 /* Tile i of the sheet (4 to a row) at (x, y). */
 static void tile(int32_t i, int32_t x, int32_t y)
 {
-    fmrb_gfx_draw_tile_raw(WINDOW, sheet, 16 * (i % 4), 16 * (i / 4), 16, 16, x, y);
+    fmrb_gfx_draw_tile_raw(G, sheet, 16 * (i % 4), 16 * (i / 4), 16, 16, x, y);
 }
 
 static void draw_tiles(void)
@@ -397,19 +313,19 @@ static void draw_tiles(void)
     if (!sheet_tried) {
         sheet_tried = 1;
         sheet = load_sprite(SHEET_SRC, "tiles.png", 64, 32);
-        if (!sheet) log_warn("tour: no tiles from " SHEET_SRC);
+        if (!sheet) fmrb_log_warn_s("tour: no tiles from " SHEET_SRC);
     }
     if (!sheet) {
         text(6, Y0 + 20, "no tiles", C_RED);
         return;
     }
     text(6, Y0 + 4, "draw_tile: one tile per call", INK_SUB);
-    fmrb_gfx_fill_rect(WINDOW, 6, Y0 + 16, 72, 36, C_PANEL);
+    fmrb_gfx_fill_rect(G, 6, Y0 + 16, 72, 36, C_PANEL);
     for (int32_t i = 0; i < 8; i++) tile(i, 8 + 18 * (i % 4), Y0 + 18 + 18 * (i / 4));
     text(86, Y0 + 18, "tilesheet.png", INK);
     text(86, Y0 + 30, "64x32 px, 8 tiles", INK);
     text(86, Y0 + 42, "a 12x4 map below", INK);
-    fmrb_gfx_fill_rect(WINDOW, 18, Y0 + 58, 192, 64, C_SKY);
+    fmrb_gfx_fill_rect(G, 18, Y0 + 58, 192, 64, C_SKY);
     for (int32_t r = 0; r < 4; r++) {
         for (int32_t c = 0; TILE_MAP[r][c]; c++) {
             if (TILE_MAP[r][c] != '.') tile(TILE_MAP[r][c] - '0', 18 + 16 * c, Y0 + 58 + 16 * r);
@@ -421,24 +337,29 @@ static void draw_tiles(void)
 
 static void draw_sound(void)
 {
-    static const char *const rows[] = {
-        "S: a scale on pulse 1", "B: a beep on pulse 2", "X: stop", "", "notes end by the clock",
+    fmrb_text_t t = { 0 }, v = { 0 };
+    fmrb_put(fmrb_put(&t, "tune   "), TUNE_STATES[tune]);
+    fmrb_put(fmrb_put(&v, "voice  "), VOICE_STATES[voice]);
+    const char *rows[] = {
+        "S: a scale on pulse 1", "B: a beep on pulse 2", "M: korobeiniki (FMSQ) on / off",
+        "V: a voice (WAV)", "X: stop it all", "", t.s, v.s,
     };
-    for (int32_t i = 0; i < 5; i++) text(6, Y0 + 6 + i * 12, rows[i], i == 4 ? INK_SUB : INK);
+    for (int32_t i = 0; i < 8; i++) text(6, Y0 + 6 + i * 12, rows[i], INK);
+    text(6, Y0 + 114, "notes end by the clock", INK_SUB);
 }
 
 /* A note sounds until it is switched off, so its end is booked by the clock
    (frames stretch when drawing is slow). */
 static void note(int32_t ch, int32_t freq, int32_t ms, int32_t volume)
 {
-    fmrb_audio_note_on_raw(AUDIO, ch, freq, volume, 2, 0);
+    fmrb_audio_note_on_raw(FMRB_AUDIO, ch, freq, volume, 2, 0);
     note_off_at[ch] = fmrb_app_uptime_ms() + ms;
 }
 
 static void silence(void)
 {
     for (int32_t ch = 0; ch < 2; ch++) {
-        fmrb_audio_note_off(AUDIO, ch);
+        fmrb_audio_note_off(FMRB_AUDIO, ch);
         note_off_at[ch] = 0;
     }
     scale_i = -1;
@@ -448,7 +369,7 @@ static void tick_sound(int64_t now)
 {
     for (int32_t ch = 0; ch < 2; ch++) {
         if (note_off_at[ch] != 0 && note_off_at[ch] <= now) {
-            fmrb_audio_note_off(AUDIO, ch);
+            fmrb_audio_note_off(FMRB_AUDIO, ch);
             note_off_at[ch] = 0;
         }
     }
@@ -463,95 +384,80 @@ static void tick_sound(int64_t now)
     }
 }
 
-/* ---- page 7: a tune and a voice */
+/* the tune and the voice */
 
-static void draw_sound_plus(void)
+static void stop_tune(void)
 {
-    buf_t t = { 0 }, v = { 0 };
-    put(&t, "tune   "); put(&t, TUNE_STATES[tune]);
-    put(&v, "voice  "); put(&v, VOICE_STATES[voice]);
-    const char *rows[] = { "M: korobeiniki (FMSQ) on / off", "V: a voice (WAV)", "", t.s, v.s };
-    for (int32_t i = 0; i < 5; i++) text(6, Y0 + 6 + i * 12, rows[i], INK);
-    text(6, Y0 + 78, TUNE_SRC, INK_SUB);
-    text(6, Y0 + 90, "voice/mahjong/default/pon.wav", INK_SUB);
+    if (tune == TUNE_PLAYING) {
+        fmrb_audio_stop(FMRB_AUDIO);
+        tune = TUNE_STOPPED;
+    }
 }
 
 static void toggle_tune(void)
 {
-    if (tune == 1) {
-        fmrb_audio_stop(AUDIO);
-        tune = 0;
+    if (tune == TUNE_PLAYING) {
+        stop_tune();
         return;
     }
     if (!tune_loaded) {
-        tune_loaded = sync_file(TUNE_SRC, CACHE "tune.fmsq") &&
-                      fmrb_audio_load_fmsq_file(AUDIO, 0, CACHE "tune.fmsq", len(CACHE "tune.fmsq")) >= 0;
+        tune_loaded = fmrb_sync_file_s(G, TUNE_SRC, CACHE "tune.fmsq") &&
+                      fmrb_audio_load_fmsq_file_s(FMRB_AUDIO, 0, CACHE "tune.fmsq");
         if (!tune_loaded) {
-            log_warn("tour: cannot load " TUNE_SRC);
-            tune = 2;
+            fmrb_log_warn_s("tour: cannot load " TUNE_SRC);
+            tune = TUNE_CANNOT_LOAD;
             return;
         }
     }
-    fmrb_audio_play_slot_raw(AUDIO, 0, 0); /* slot 0 on MAIN */
-    tune = 1;
+    fmrb_audio_play_slot_raw(FMRB_AUDIO, 0, FMRB_AUDIO_MAIN);
+    tune = TUNE_PLAYING;
 }
 
 static void play_voice(void)
 {
-    int32_t r = fmrb_audio_play_wav(AUDIO, VOICE, len(VOICE));
+    int32_t r = fmrb_audio_play_wav_s(FMRB_AUDIO, VOICE);
     voice = r == 1 ? 1 : r == 0 ? 2 : 3;
 }
 
-/* ---- page 8: files */
-
-static int32_t file_write(const char *path, const char *s)
-{
-    return fmrb_file_write(path, len(path), (const uint8_t *)s, len(s)) == 1;
-}
-
-static int32_t file_delete(const char *path) { return fmrb_file_delete(path, len(path)) == 1; }
+/* ---- page 7: files */
 
 static void setup_files(void)
 {
-    fmrb_file_mkdir(DIR, len(DIR));
-    file_write(DIR "/hello.txt", "hello from the tour");
+    fmrb_file_mkdir_s(DIR);
+    fmrb_file_write_s(DIR "/hello.txt", "hello from the tour");
 }
 
 static void clean_files(void)
 {
-    file_delete(DIR "/count.txt");
-    file_delete(DIR "/hello.txt");
-    file_delete(DIR);
+    fmrb_file_delete_s(DIR "/count.txt");
+    fmrb_file_delete_s(DIR "/hello.txt");
+    fmrb_file_delete_s(DIR);
 }
 
 static void draw_files(void)
 {
     static const char *const labels[] = { "dir", "wrote", "read", "count", "list", "free", "last" };
-    buf_t v[7] = { 0 };
+    fmrb_text_t v[7] = { 0 };
     char d[64];
-    put(&v[0], DIR "/");
-    int64_t size = fmrb_file_size(DIR "/hello.txt", len(DIR "/hello.txt"));
-    if (size >= 0) { put(&v[1], "hello.txt, "); put_int(&v[1], size); put(&v[1], " B"); } else { put(&v[1], "-"); }
-    int32_t n = fmrb_file_read(DIR "/hello.txt", len(DIR "/hello.txt"), (uint8_t *)d, sizeof(d));
-    if (n >= 0) put_read(&v[2], n < (int32_t)sizeof(d) ? n : (int32_t)sizeof(d), d); else put(&v[2], "-");
+    fmrb_put(&v[0], DIR "/");
+    int64_t size = fmrb_file_size_s(DIR "/hello.txt");
+    if (size >= 0) fmrb_put(fmrb_put_int(fmrb_put(&v[1], "hello.txt, "), size), " B");
+    else fmrb_put(&v[1], "-");
+    fmrb_put(&v[2], fmrb_file_read_s(DIR "/hello.txt", d, sizeof(d)) >= 0 ? d : "-");
+    static char data[1024];
     int32_t lines = 0;
-    n = fmrb_file_read(DIR "/count.txt", len(DIR "/count.txt"), 0, 0); /* its size */
-    if (n > 0) {
-        static uint8_t data[1024];
-        if (n > (int32_t)sizeof(data)) n = sizeof(data);
-        n = fmrb_file_read(DIR "/count.txt", len(DIR "/count.txt"), data, n);
-        for (int32_t i = 0; i < n; i++) lines += data[i] == '\n';
-    }
-    put_int(&v[3], lines); put(&v[3], " lines");
-    n = fmrb_file_list_raw(DIR, len(DIR), d, sizeof(d));
+    for (int32_t i = 0, n = fmrb_file_read_s(DIR "/count.txt", data, sizeof(data)); i < n; i++) lines += data[i] == '\n';
+    fmrb_put(fmrb_put_int(&v[3], lines), " lines");
     /* one name per line: a space between them */
-    for (int32_t i = 0; i < n && i < (int32_t)sizeof(d); i++) {
-        if (d[i] != '\n') { char c[2] = { d[i], 0 }; put(&v[4], c); }
-        else if (i + 1 < n) put(&v[4], " ");
+    int32_t n = fmrb_file_list_s(DIR, d, sizeof(d));
+    for (int32_t i = 0; i < n; i++) {
+        if (d[i] != '\n') fmrb_put_char(&v[4], d[i]);
+        else if (i + 1 < n) fmrb_put_char(&v[4], ' ');
     }
-    int64_t free = fmrb_file_free_bytes(DIR, len(DIR));
-    if (free >= 0) { put_int(&v[5], free / 1024); put(&v[5], " KB"); } else { put(&v[5], "-"); }
-    put(&v[6], FILE_STATES[file_last]);
+    int64_t free = fmrb_file_free_bytes_s(DIR);
+    if (free >= 0) fmrb_put(fmrb_put_int(&v[5], free / 1024), " KB");
+    else fmrb_put(&v[5], "-");
+    fmrb_put(&v[6], FILE_STATES[file_last]);
     for (int32_t i = 0; i < 7; i++) row(6, 58, Y0 + 6 + i * 11, labels[i], v[i].s);
     text(6, Y0 + 86, "all removed when you leave the page", INK_SUB);
 }
@@ -559,14 +465,14 @@ static void draw_files(void)
 static void file_key(int32_t sc)
 {
     if (sc == 0x1A) { /* W */
-        fmrb_file_append(DIR "/count.txt", len(DIR "/count.txt"), (const uint8_t *)"w\n", 2);
+        fmrb_file_append_s(DIR "/count.txt", "w\n");
         file_last = 1;
     } else if (sc == 0x07) { /* D */
-        file_last = file_delete(DIR "/count.txt") ? 2 : 3;
+        file_last = fmrb_file_delete_s(DIR "/count.txt") ? 2 : 3;
     }
 }
 
-/* ---- page 9: input */
+/* ---- page 8: input */
 
 static int32_t in_pad(int32_t x, int32_t y) { return x > 6 && x < 221 && y > Y0 + 16 && y < Y0 + 99; }
 
@@ -575,13 +481,13 @@ static int32_t clamp(int32_t v, int32_t lo, int32_t hi) { return v < lo ? lo : v
 static void draw_input(void)
 {
     text(6, Y0 + 4, "drag inside the box to draw", INK_SUB);
-    fmrb_gfx_draw_rect(WINDOW, 6, Y0 + 16, 216, 84, INK_SUB);
+    fmrb_gfx_draw_rect(G, 6, Y0 + 16, 216, 84, INK_SUB);
     for (int32_t i = 0; i < n_pts; i++) {
-        if (p_start[i]) fmrb_gfx_set_pixel(WINDOW, px[i], py[i], C_BLUE);
-        else fmrb_gfx_draw_line(WINDOW, px[i - 1], py[i - 1], px[i], py[i], C_BLUE);
+        if (p_start[i]) fmrb_gfx_set_pixel(G, px[i], py[i], C_BLUE);
+        else fmrb_gfx_draw_line(G, px[i - 1], py[i - 1], px[i], py[i], C_BLUE);
     }
     row(6, 42, Y0 + 106, "typed", typed);
-    row(6, 42, Y0 + 118, "last", input);
+    row(6, 42, Y0 + 118, "last", input.s);
 }
 
 /* Keeps a point of the stroke (the first one starts it) and draws the line
@@ -595,9 +501,9 @@ static void add_point(int32_t x, int32_t y, int32_t start)
     px[i] = (int16_t)x;
     py[i] = (int16_t)y;
     p_start[i] = (uint8_t)start;
-    if (start) fmrb_gfx_set_pixel(WINDOW, x, y, C_BLUE);
-    else fmrb_gfx_draw_line(WINDOW, px[i - 1], py[i - 1], x, y, C_BLUE);
-    fmrb_gfx_present_raw(WINDOW, 0, 0, 0);
+    if (start) fmrb_gfx_set_pixel(G, x, y, C_BLUE);
+    else fmrb_gfx_draw_line(G, px[i - 1], py[i - 1], x, y, C_BLUE);
+    fmrb_present(G);
 }
 
 static void type_char(char c)
@@ -610,77 +516,78 @@ static void type_char(char c)
     typed[n_typed] = '\0';
 }
 
-/* ---- page 10: the system side */
+/* ---- page 9: the system side */
 
 static void draw_system(void)
 {
     static const char *const labels[] = { "name", "pid", "platform", "language", "uptime", "clock", "memory", "toml" };
-    buf_t v[8] = { 0 };
+    fmrb_text_t v[8] = { 0 };
     char s[96];
-    put_read(&v[0], fmrb_app_name(s, sizeof(s)), s);
-    put_int(&v[1], fmrb_app_pid());
-    put(&v[2], platform());
-    language(&v[3]);
-    put_int(&v[4], (fmrb_app_uptime_ms() - started) / 1000); put(&v[4], " s");
+    fmrb_app_name_s(s, sizeof(s));
+    fmrb_put(&v[0], s);
+    fmrb_put_int(&v[1], fmrb_app_pid());
+    fmrb_put(&v[2], platform());
+    fmrb_app_language_s(s, sizeof(s));
+    fmrb_put(&v[3], s);
+    fmrb_put(fmrb_put_int(&v[4], (fmrb_app_uptime_ms() - started) / 1000), " s");
     fmrb_app_wallclock_t c;
     if (fmrb_app_wallclock(&c) == 1) {
-        put2(&v[5], c.hour); put(&v[5], ":"); put2(&v[5], c.minute); put(&v[5], ":"); put2(&v[5], c.second);
+        fmrb_put_int2(fmrb_put(fmrb_put_int2(fmrb_put(fmrb_put_int2(&v[5], c.hour), ":"), c.minute), ":"), c.second);
     } else {
-        put(&v[5], "-");
+        fmrb_put(&v[5], "-");
     }
     fmrb_app_sys_pool_info_t m;
-    put_int(&v[6], fmrb_app_sys_pool_info(&m) == 1 ? m.free / 1024 : 0); put(&v[6], " KB free");
+    fmrb_put(fmrb_put_int(&v[6], fmrb_app_sys_pool_info(&m) == 1 ? m.free / 1024 : 0), " KB free");
     /* the .app.toml next to the .app.wasm this app was started from */
-    int32_t n = fmrb_app_script_path(s, sizeof(s) - 1);
+    int32_t n = fmrb_app_script_path_s(s, sizeof(s));
     int64_t size = -1;
-    if (n > 5 && n < (int32_t)sizeof(s) - 1) {
+    if (n > 5) {
         s[n - 4] = 't'; s[n - 3] = 'o'; s[n - 2] = 'm'; s[n - 1] = 'l';
-        size = fmrb_file_size(s, n);
+        size = fmrb_file_size_s(s);
     }
-    if (size >= 0) { put_int(&v[7], size); put(&v[7], " B"); } else { put(&v[7], "-"); }
+    if (size >= 0) fmrb_put(fmrb_put_int(&v[7], size), " B");
+    else fmrb_put(&v[7], "-");
     for (int32_t i = 0; i < 8; i++) row(6, 86, Y0 + 6 + i * 11, labels[i], v[i].s);
-    if (blink) fmrb_gfx_fill_circle(WINDOW, fmrb_gfx_area_width(WINDOW) - 10, Y0 + 8, 3, C_GREEN);
+    if (blink) fmrb_gfx_fill_circle(G, fmrb_gfx_area_width(G) - 10, Y0 + 8, 3, C_GREEN);
 }
 
-/* ---- page 11: the clipboard, the clock, the app's wasm numbers */
+/* ---- page 10: the clipboard, the clock, the app's wasm numbers */
 
 #define SYS_Y(i) (Y0 + 6 + (i) * 11)
 
 static void draw_system_plus(void)
 {
     char clip[24];
-    int32_t n = fmrb_app_clipboard_raw(20, clip, sizeof(clip) - 1);
-    if (n < 0) n = 0;
-    if (n > (int32_t)sizeof(clip) - 1) n = sizeof(clip) - 1;
+    int32_t n = fmrb_app_clipboard_s(20, clip, sizeof(clip));
     for (int32_t i = 0; i < n; i++) {
-        if (clip[i] == '\n') { n = i; break; }
+        if (clip[i] == '\n') clip[i] = '\0';
     }
     text(6, SYS_Y(0), "clipboard", INK_SUB);
-    if (n > 0) fmrb_gfx_draw_text_raw(WINDOW, 70, SYS_Y(0), clip, n, INK, PAPER, 1);
+    if (clip[0]) fmrb_draw_text_mixed_s(G, 70, SYS_Y(0), clip, INK, PAPER);
     else text(70, SYS_Y(0), "(empty)", INK);
-    buf_t v[7] = { 0 };
-    put_int(&v[0], fmrb_app_clipboard_gen());
-    row(6, 70, SYS_Y(1), "changes", v[0].s);
+    fmrb_text_t v[7] = { 0 };
+    row(6, 70, SYS_Y(1), "changes", fmrb_put_int(&v[0], fmrb_app_clipboard_gen())->s);
     text(6, SYS_Y(2), "wallclock", INK_SUB);
-    if (fmrb_gfx_draw_wallclock(WINDOW, 70, SYS_Y(2), INK, PAPER) != 1) text(70, SYS_Y(2), "-", INK);
+    if (fmrb_gfx_draw_wallclock(G, 70, SYS_Y(2), INK, PAPER) != 1) text(70, SYS_Y(2), "-", INK);
     static const char *const labels[] = { "memory", "binary", "hooks", "last hook", "wasm apps", "frames" };
     fmrb_app_wasm_app_stats_t a;
     if (fmrb_app_wasm_app_stats(fmrb_app_pid(), &a) == 1) {
-        put_int(&v[1], a.pages); put(&v[1], " pages, max "); put_int(&v[1], a.max_pages);
-        put_int(&v[2], a.binary_size); put(&v[2], " B");
-        put_int(&v[3], a.calls); put(&v[3], " calls");
-        put_int(&v[4], a.hook_us); put(&v[4], " us, max "); put_int(&v[4], a.hook_max_us);
+        fmrb_put_int(fmrb_put(fmrb_put_int(&v[1], a.pages), " pages, max "), a.max_pages);
+        fmrb_put(fmrb_put_int(&v[2], a.binary_size), " B");
+        fmrb_put(fmrb_put_int(&v[3], a.calls), " calls");
+        fmrb_put_int(fmrb_put(fmrb_put_int(&v[4], a.hook_us), " us, max "), a.hook_max_us);
     } else {
-        for (int32_t i = 1; i <= 4; i++) put(&v[i], "-");
+        for (int32_t i = 1; i <= 4; i++) fmrb_put(&v[i], "-");
     }
     fmrb_app_wasm_stats_t w;
     if (fmrb_app_wasm_stats(&w) == 1) {
-        put_int(&v[5], w.apps); put(&v[5], ", pool "); put_int(&v[5], w.pool_used / 1024); put(&v[5], " KB");
+        fmrb_put(fmrb_put_int(fmrb_put(fmrb_put_int(&v[5], w.apps), ", pool "), w.pool_used / 1024), " KB");
     } else {
-        put(&v[5], "-");
+        fmrb_put(&v[5], "-");
     }
     fmrb_app_gfx_stats_t gs;
-    if (fmrb_app_gfx_stats(&gs) == 1) put_int(&v[6], gs.presents); else put(&v[6], "-");
+    if (fmrb_app_gfx_stats(&gs) == 1) fmrb_put_int(&v[6], gs.presents);
+    else fmrb_put(&v[6], "-");
     for (int32_t i = 0; i < 6; i++) row(6, 70, SYS_Y(i + 3), labels[i], v[i + 1].s);
 }
 
@@ -688,10 +595,10 @@ static void draw_system_plus(void)
 
 static void draw(void)
 {
-    int32_t w = fmrb_gfx_area_width(WINDOW), h = fmrb_gfx_area_height(WINDOW);
-    fmrb_gfx_fill_rect(WINDOW, 0, 0, w, h, PAPER);
-    buf_t head = { 0 };
-    put_int(&head, page + 1); put(&head, "/11 "); put(&head, PAGES[page]);
+    int32_t w = fmrb_gfx_area_width(G), h = fmrb_gfx_area_height(G);
+    fmrb_gfx_fill_rect(G, 0, 0, w, h, PAPER);
+    fmrb_text_t head = { 0 };
+    fmrb_put(fmrb_put(fmrb_put_int(&head, page + 1), "/10 "), PAGES[page]);
     text(4, 2, head.s, INK);
     switch (page) {
     case P_SHAPES: draw_shapes(); break;
@@ -700,31 +607,24 @@ static void draw(void)
     case P_SPRITES: draw_sprites(); break;
     case P_TILES: draw_tiles(); break;
     case P_SOUND: draw_sound(); break;
-    case P_SOUND_PLUS: draw_sound_plus(); break;
     case P_FILES: draw_files(); break;
     case P_INPUT: draw_input(); break;
     case P_SYSTEM: draw_system(); break;
     default: draw_system_plus(); break;
     }
     text(4, h - 10, KEYS[page], INK_SUB);
-    fmrb_gfx_present_raw(WINDOW, 0, 0, 0);
+    fmrb_present(G);
 }
 
 /* Leaves the page shown, then enters p. */
 static void set_page(int32_t p)
 {
-    if (page == P_SPRITES) {
-        show_sprites(0);
-    } else if (page == P_SOUND_PLUS && tune == 1) {
-        fmrb_audio_stop(AUDIO);
-        tune = 0;
-    } else if (page == P_FILES) {
-        clean_files();
-    }
+    if (page == P_SPRITES) show_sprites(0);
+    else if (page == P_SOUND) stop_tune();
+    else if (page == P_FILES) clean_files();
     page = p;
-    buf_t b = { 0 };
-    put(&b, "tour: page "); put(&b, PAGES[p]);
-    log_info(b.s);
+    fmrb_text_t b = { 0 };
+    fmrb_log_info_s(fmrb_put(fmrb_put(&b, "tour: page "), PAGES[p])->s);
     if (p == P_SPRITES) {
         show_sprites(1);
     } else if (p == P_FILES) {
@@ -739,21 +639,21 @@ static void set_page(int32_t p)
 void on_create(void)
 {
     started = fmrb_app_uptime_ms();
-    buf_t b = { 0 };
-    put(&b, "tour: started on "); put(&b, platform());
-    log_info(b.s);
+    fmrb_put(&input, "-");
+    fmrb_text_t b = { 0 };
+    fmrb_log_info_s(fmrb_put(fmrb_put(&b, "tour: started on "), platform())->s);
     draw();
 }
 
 void on_destroy(void)
 {
-    fmrb_audio_note_off(AUDIO, 0);
-    fmrb_audio_note_off(AUDIO, 1);
-    fmrb_audio_stop(AUDIO);
+    fmrb_audio_note_off(FMRB_AUDIO, 0);
+    fmrb_audio_note_off(FMRB_AUDIO, 1);
+    fmrb_audio_stop(FMRB_AUDIO);
     clean_files();
-    if (img_ok) fmrb_gfx_delete_image(WINDOW, img.id);
-    fmrb_gfx_delete_all_sprites(WINDOW);
-    log_info("tour: bye");
+    if (img_ok) fmrb_gfx_delete_image(G, img.id);
+    fmrb_gfx_delete_all_sprites(G);
+    fmrb_log_info_s("tour: bye");
 }
 
 int32_t on_update(void)
@@ -794,7 +694,7 @@ static void key(const fmrb_app_event_t *ev)
     case P_SPRITES:
         if (sc == 0x0B && spr_ok) { /* H */
             hidden0 = !hidden0;
-            fmrb_gfx_set_sprite_visible(WINDOW, sprites[0], !hidden0);
+            fmrb_gfx_set_sprite_visible(G, sprites[0], !hidden0);
         } else if (sc == 0x13) { /* P */
             paused = !paused;
         }
@@ -802,11 +702,9 @@ static void key(const fmrb_app_event_t *ev)
     case P_SOUND:
         if (sc == 0x16) { scale_i = 0; scale_at = fmrb_app_uptime_ms(); } /* S */
         else if (sc == 0x05) note(1, 988, 90, 14);                        /* B */
-        else if (sc == 0x1B) silence();                                   /* X */
-        break;
-    case P_SOUND_PLUS:
-        if (sc == 0x10) toggle_tune();      /* M */
-        else if (sc == 0x19) play_voice();  /* V */
+        else if (sc == 0x10) toggle_tune();                               /* M */
+        else if (sc == 0x19) play_voice();                                /* V */
+        else if (sc == 0x1B) { silence(); stop_tune(); }                  /* X */
         break;
     case P_FILES:
         file_key(sc);
@@ -821,24 +719,14 @@ static void key(const fmrb_app_event_t *ev)
         }
         break;
     case P_SYSTEM_PLUS:
-        if (sc == 0x06) { /* C */
-            static const char copied[] = "copied by the tour";
-            fmrb_app_set_clipboard(copied, len(copied));
-        }
+        if (sc == 0x06) fmrb_app_set_clipboard_s("copied by the tour"); /* C */
         break;
     }
     draw();
 }
 
-static void set_input(const buf_t *b)
-{
-    for (int32_t i = 0; i <= b->n && i < (int32_t)sizeof(input) - 1; i++) input[i] = b->s[i];
-    input[sizeof(input) - 1] = '\0';
-}
-
 void on_event(const fmrb_app_event_t *ev)
 {
-    buf_t b = { 0 };
     switch (ev->type) {
     case FMRB_APP_EVENT_TYPE_MOUSE_DOWN:
         if (ev->button == 1 && page == P_INPUT && in_pad(ev->x, ev->y)) {
@@ -851,8 +739,7 @@ void on_event(const fmrb_app_event_t *ev)
         break;
     case FMRB_APP_EVENT_TYPE_MOUSE_UP:
         if (ev->button != 1) return;
-        put(&b, "click "); put_int(&b, ev->x); put(&b, ","); put_int(&b, ev->y);
-        set_input(&b);
+        fmrb_put_int(fmrb_put(fmrb_put_int(fmrb_put(fmrb_text_clear(&input), "click "), ev->x), ","), ev->y);
         if (pen) {
             pen = 0;
             draw();
@@ -861,13 +748,9 @@ void on_event(const fmrb_app_event_t *ev)
         set_page((page + 1) % N_PAGES);
         break;
     case FMRB_APP_EVENT_TYPE_KEY_DOWN:
-        if (ev->character > ' ' && ev->character < 127) {
-            char c[2] = { (char)ev->character, 0 };
-            put(&b, "key "); put(&b, c);
-        } else {
-            put(&b, "key code "); put_int(&b, ev->keycode);
-        }
-        set_input(&b);
+        fmrb_text_clear(&input);
+        if (fmrb_event_char(ev)) fmrb_put_char(fmrb_put(&input, "key "), fmrb_event_char(ev));
+        else fmrb_put_int(fmrb_put(&input, "key code "), ev->keycode);
         key(ev);
         break;
     }

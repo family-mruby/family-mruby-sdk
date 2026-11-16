@@ -46,7 +46,6 @@ const (
 	pSprites
 	pTiles
 	pSound
-	pSoundPlus
 	pFiles
 	pInput
 	pSystem
@@ -54,15 +53,14 @@ const (
 	nPages
 )
 
-var pages = [nPages]string{"Shapes", "Text", "Image", "Sprites", "Tiles", "Sound", "Sound+", "Files", "Input", "System", "System+"}
+var pages = [nPages]string{"Shapes", "Text", "Image", "Sprites", "Tiles", "Sound", "Files", "Input", "System", "System+"}
 var keys = [nPages]string{
 	"click, arrows, 1-9, 0: pages  q: quit",
 	"T: font",
 	"I: show / hide the picture",
 	"H: hide / show one  P: pause",
 	"arrows: pages  q: quit",
-	"S: scale  B: beep  X: stop",
-	"M: tune on / off  V: voice",
+	"S B: notes  M: tune  V: voice  X: off",
 	"W: append  D: delete count.txt",
 	"drag: draw  type  BS: clear",
 	"arrows: pages  q: quit",
@@ -175,7 +173,7 @@ func row(x, vx, y int32, label, value string) {
 func (t *tour) draw() {
 	w, h := g.AreaWidth(), g.AreaHeight()
 	g.FillRect(0, 0, w, h, paper)
-	text(4, 2, itoa(int64(t.page+1))+"/11 "+pages[t.page], ink)
+	text(4, 2, itoa(int64(t.page+1))+"/10 "+pages[t.page], ink)
 	switch t.page {
 	case pShapes:
 		drawShapes()
@@ -188,9 +186,7 @@ func (t *tour) draw() {
 	case pTiles:
 		t.drawTiles()
 	case pSound:
-		drawSound()
-	case pSoundPlus:
-		t.drawSoundPlus()
+		t.drawSound()
 	case pFiles:
 		t.drawFiles()
 	case pInput:
@@ -464,15 +460,13 @@ func (t *tour) tile(i, x, y int32) {
 
 // ---- page 6: sound
 
-func drawSound() {
-	rows := [...]string{"S: a scale on pulse 1", "B: a beep on pulse 2", "X: stop", "", "notes end by the clock"}
+func (t *tour) drawSound() {
+	rows := [...]string{"S: a scale on pulse 1", "B: a beep on pulse 2", "M: korobeiniki (FMSQ) on / off",
+		"V: a voice (WAV)", "X: stop it all", "", "tune   " + t.tune, "voice  " + t.voice}
 	for i, r := range rows {
-		c := int32(ink)
-		if i == 4 {
-			c = inkSub
-		}
-		text(6, y0+6+int32(i)*12, r, c)
+		text(6, y0+6+int32(i)*12, r, ink)
 	}
+	text(6, y0+114, "notes end by the clock", inkSub)
 }
 
 // A note sounds until it is switched off, so its end is booked by the
@@ -508,22 +502,18 @@ func (t *tour) tickSound(now int64) {
 	}
 }
 
-// ---- page 7: a tune and a voice
+// The tune and the voice.
 
-func (t *tour) drawSoundPlus() {
-	rows := [...]string{"M: korobeiniki (FMSQ) on / off", "V: a voice (WAV)", "",
-		"tune   " + t.tune, "voice  " + t.voice}
-	for i, r := range rows {
-		text(6, y0+6+int32(i)*12, r, ink)
+func (t *tour) stopTune() {
+	if t.tune == "playing" {
+		audio.Stop()
+		t.tune = "stopped"
 	}
-	text(6, y0+78, tuneSrc, inkSub)
-	text(6, y0+90, "voice/mahjong/default/pon.wav", inkSub)
 }
 
 func (t *tour) toggleTune() {
 	if t.tune == "playing" {
-		audio.Stop()
-		t.tune = "stopped"
+		t.stopTune()
 		return
 	}
 	if !t.tuneLoaded {
@@ -549,7 +539,7 @@ func (t *tour) playVoice() {
 	}
 }
 
-// ---- page 8: files
+// ---- page 7: files
 
 func setupFiles() {
 	fmrb.FileMkdir(dir)
@@ -621,7 +611,7 @@ func (t *tour) fileKey(sc int32) {
 	}
 }
 
-// ---- page 9: input
+// ---- page 8: input
 
 func inPad(x, y int32) bool { return x > 6 && x < 221 && y > y0+16 && y < y0+99 }
 
@@ -667,7 +657,7 @@ func (t *tour) addPoint(x, y int32, start bool) {
 	g.Present()
 }
 
-// ---- page 10: the system side
+// ---- page 9: the system side
 
 func two(v int32) string {
 	if v < 10 {
@@ -711,7 +701,7 @@ func (t *tour) drawSystem() {
 	}
 }
 
-// ---- page 11: the clipboard, the clock, the app's wasm numbers
+// ---- page 10: the clipboard, the clock, the app's wasm numbers
 
 func drawSystemPlus() {
 	clip := fmrb.Clipboard(20)
@@ -785,11 +775,8 @@ func (t *tour) setPage(p int) {
 	switch t.page {
 	case pSprites:
 		t.showSprites(false)
-	case pSoundPlus:
-		if t.tune == "playing" {
-			audio.Stop()
-			t.tune = "stopped"
-		}
+	case pSound:
+		t.stopTune()
 	case pFiles:
 		cleanFiles()
 	}
@@ -879,14 +866,13 @@ func (t *tour) key(ev fmrb.Event) {
 			t.scaleAt = fmrb.UptimeMs()
 		case 0x05: // B
 			t.note(1, 988, 90, 14)
+		case 0x10: // M
+			t.toggleTune()
+		case 0x19: // V
+			t.playVoice()
 		case 0x1B: // X
 			t.silence()
-		}
-	case pSoundPlus:
-		if sc == 0x10 { // M
-			t.toggleTune()
-		} else if sc == 0x19 { // V
-			t.playVoice()
+			t.stopTune()
 		}
 	case pFiles:
 		t.fileKey(sc)

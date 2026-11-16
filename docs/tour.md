@@ -6,7 +6,8 @@ language, so the languages can be compared line by line. This file is its
 specification; a new language's tour follows it exactly. The four are
 `tinygo/examples/tour/main.go`, `rust/examples/tour/src/lib.rs`,
 `zig/examples/tour/app.zig` and `c/examples/tour/app.c` (TinyGo and C were
-the first, the references). It is modelled on fmruby-core's MicroPython demo
+the first, the references; the C one uses the SDK's helper header
+`c/fmrb.h`). It is modelled on fmruby-core's MicroPython demo
 (`flash/app/python/python.app.py`), limited to what the boundary offers to
 every language.
 
@@ -53,20 +54,19 @@ specification.
 | 3 | Image | `I: show / hide the picture` |
 | 4 | Sprites | `H: hide / show one  P: pause` |
 | 5 | Tiles | `arrows: pages  q: quit` |
-| 6 | Sound | `S: scale  B: beep  X: stop` |
-| 7 | Sound+ | `M: tune on / off  V: voice` |
-| 8 | Files | `W: append  D: delete count.txt` |
-| 9 | Input | `drag: draw  type  BS: clear` |
-| 10 | System | `arrows: pages  q: quit` |
-| 11 | System+ | `C: copy to the clipboard` |
+| 6 | Sound | `S B: notes  M: tune  V: voice  X: off` |
+| 7 | Files | `W: append  D: delete count.txt` |
+| 8 | Input | `drag: draw  type  BS: clear` |
+| 9 | System | `arrows: pages  q: quit` |
+| 10 | System+ | `C: copy to the clipboard` |
 
 Changing pages (every page):
 
-- A click (mouse up, button 1) goes to the next page (11 -> 1), except on
+- A click (mouse up, button 1) goes to the next page (10 -> 1), except on
   the Input page when the press began inside its pad.
 - Right arrow (scancode 0x4F) the next page, left arrow (0x50) the previous
-  one (1 -> 11); `1`-`9` (0x1E..0x26) pages 1-9, `0` (0x27) page 10. Page 11
-  is reached with the arrows or a click.
+  one (1 -> 10); `1`-`9` (0x1E..0x26) pages 1-9, `0` (0x27) page 10: every
+  page has its number key.
 - `q` (the character) stops the app, on every page.
 - A page's own keys are letters, by scancode, and only on that page: `T`
   0x17, `I` 0x0C, `H` 0x0B, `P` 0x13, `S` 0x16, `B` 0x05, `X` 0x1B, `M` 0x10,
@@ -75,7 +75,7 @@ Changing pages (every page):
 ## Every redraw
 
 1. `fill_rect(0, 0, area_width, area_height, PAPER)`.
-2. Header at (4, 2), INK: `"<n>/11 <Page>"` (n from 1).
+2. Header at (4, 2), INK: `"<n>/10 <Page>"` (n from 1).
 3. The page's body.
 4. Footer at (4, area_height - 10), INK_SUB: the page's keys (table above).
 5. `present`.
@@ -189,33 +189,28 @@ empty) as a small map.
   444455554444
   ```
 
-**6 Sound**: rows from (6, y0+6), 12 dots apart: `S: a scale on pulse 1`,
-`B: a beep on pulse 2`, `X: stop`, (empty), `notes end by the clock`
-(INK_SUB; the others INK).
+**6 Sound**: notes on the pulse channels, a tune and a voice. Rows from
+(6, y0+6), 12 dots apart, INK: `S: a scale on pulse 1`, `B: a beep on
+pulse 2`, `M: korobeiniki (FMSQ) on / off`, `V: a voice (WAV)`, `X: stop
+it all`, (empty), `tune   <stopped | playing | cannot load>`, `voice  <- |
+played | not on this machine | failed>`, (empty), `notes end by the clock`
+(INK_SUB).
 
 - `S`: the scale 262, 294, 330, 349, 392, 440, 494, 523 Hz on channel 0, one
   note every 200 ms, each 150 ms long, volume 12, duty 2, no sweep.
 - `B`: 988 Hz on channel 1 for 90 ms, volume 14, duty 2.
-- `X`: both channels off and the scale stopped.
-- A note's end is booked by the clock (`uptime_ms`), checked in on_update,
-  on every page.
-
-**7 Sound+**: a tune and a voice. Rows from (6, y0+6), 12 dots apart:
-`M: korobeiniki (FMSQ) on / off`, `V: a voice (WAV)` (INK), (empty),
-`tune   <stopped | playing | cannot load>`, `voice  <- | played | not on
-this machine | failed>` (INK), (empty),
-`/usr/share/music/korobeiniki.fmsq`, `voice/mahjong/default/pon.wav`
-(INK_SUB).
-
 - `M`, the first time: sync `/usr/share/music/korobeiniki.fmsq` to
   `/cache/app/tour/tune.fmsq` and `load_fmsq_file(0, <the copy>)` (on
   failure: `cannot load`, and `M` tries again). Then `M` alternates
   `play_slot_raw(0, 0)` (slot 0 on MAIN) and `stop`.
 - `V`: `play_wav("/usr/share/sounds/voice/mahjong/default/pon.wav")`: 1
   `played`, 0 `not on this machine` (Retro), below 0 `failed`.
-- Leaving the page stops the tune; on_destroy stops it too.
+- `X`: both channels off, the scale stopped, and the tune stopped when it
+  plays.
+- A note's end is booked by the clock (`uptime_ms`), checked in on_update,
+  on every page. Leaving the page stops the tune; on_destroy stops it too.
 
-**8 Files**: FmrbFile in a directory of the tour's own, `/home/tour/`,
+**7 Files**: FmrbFile in a directory of the tour's own, `/home/tour/`,
 which exists only while the page is shown.
 
 - Entering the page: `mkdir("/home/tour")`, then `write` of
@@ -240,7 +235,7 @@ which exists only while the page is shown.
   `delete("/home/tour/count.txt")`: `deleted count.txt` when it was there,
   `no count.txt` when not.
 
-**9 Input**: drawing with the pointer and typed characters.
+**8 Input**: drawing with the pointer and typed characters.
 
 - (6, y0+4) INK_SUB `drag inside the box to draw`; the pad
   `draw_rect(6, y0+16, 216, 84, INK_SUB)`.
@@ -260,7 +255,7 @@ which exists only while the page is shown.
   `key <c>` (a character 0x21 to 0x7E), `key code <keycode>` (others), `-`
   at start.
 
-**10 System**: label at x 6 (INK_SUB), value at x 86 (INK), rows from y0+6,
+**9 System**: label at x 6 (INK_SUB), value at x 86 (INK), rows from y0+6,
 11 dots apart:
 
 | Label | Value |
@@ -277,7 +272,7 @@ which exists only while the page is shown.
 - A blinking dot: `fill_circle(area_width - 10, y0 + 8, 3, GREEN)` while
   `(uptime_ms - start) / 500` is even; the page is redrawn when that flips.
 
-**11 System+**: the clipboard, the firmware's clock and the app's own wasm
+**10 System+**: the clipboard, the firmware's clock and the app's own wasm
 numbers. Label at x 6 (INK_SUB), value at x 70 (INK), rows from y0+6, 11
 dots apart; the page is redrawn every second.
 
@@ -299,10 +294,10 @@ on the clipboard (`app_set_clipboard`) and redraws.
 ## The loop
 
 - on_update: end the notes and step the scale; flip the blink (redraw page
-  10); step the sprites (page 4); redraw page 11 when the second changes;
+  9); step the sprites (page 4); redraw page 10 when the second changes;
   return 100.
 - Every page change logs `tour: page <Page>`, after the page left and
-  before the page entered (the order the Sprites, Sound+ and Files pages
+  before the page entered (the order the Sprites, Sound and Files pages
   need). on_create logs `tour: started on <platform>` and draws page 1;
   on_destroy switches both channels off, stops the tune, cleans the Files
   page's directory, deletes the picture and the sprites, and logs

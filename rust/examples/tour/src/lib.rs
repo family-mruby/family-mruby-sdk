@@ -43,15 +43,14 @@ const P_IMAGE: usize = 2;
 const P_SPRITES: usize = 3;
 const P_TILES: usize = 4;
 const P_SOUND: usize = 5;
-const P_SOUND_PLUS: usize = 6;
-const P_FILES: usize = 7;
-const P_INPUT: usize = 8;
-const P_SYSTEM: usize = 9;
-const P_SYSTEM_PLUS: usize = 10;
-const N_PAGES: usize = 11;
+const P_FILES: usize = 6;
+const P_INPUT: usize = 7;
+const P_SYSTEM: usize = 8;
+const P_SYSTEM_PLUS: usize = 9;
+const N_PAGES: usize = 10;
 
 const PAGES: [&str; N_PAGES] = [
-    "Shapes", "Text", "Image", "Sprites", "Tiles", "Sound", "Sound+", "Files", "Input", "System", "System+",
+    "Shapes", "Text", "Image", "Sprites", "Tiles", "Sound", "Files", "Input", "System", "System+",
 ];
 const KEYS: [&str; N_PAGES] = [
     "click, arrows, 1-9, 0: pages  q: quit",
@@ -59,8 +58,7 @@ const KEYS: [&str; N_PAGES] = [
     "I: show / hide the picture",
     "H: hide / show one  P: pause",
     "arrows: pages  q: quit",
-    "S: scale  B: beep  X: stop",
-    "M: tune on / off  V: voice",
+    "S B: notes  M: tune  V: voice  X: off",
     "W: append  D: delete count.txt",
     "drag: draw  type  BS: clear",
     "arrows: pages  q: quit",
@@ -272,7 +270,7 @@ impl Tour {
             2,
             Line::new()
                 .int(self.page as i64 + 1)
-                .push("/11 ")
+                .push("/10 ")
                 .push(PAGES[self.page])
                 .as_str(),
             INK,
@@ -283,8 +281,7 @@ impl Tour {
             P_IMAGE => self.draw_image(),
             P_SPRITES => self.draw_sprites(),
             P_TILES => self.draw_tiles(),
-            P_SOUND => draw_sound(),
-            P_SOUND_PLUS => self.draw_sound_plus(),
+            P_SOUND => self.draw_sound(),
             P_FILES => self.draw_files(),
             P_INPUT => self.draw_input(),
             P_SYSTEM => self.draw_system(),
@@ -298,10 +295,7 @@ impl Tour {
     fn set_page(&mut self, p: usize) {
         match self.page {
             P_SPRITES => self.show_sprites(false),
-            P_SOUND_PLUS if self.tune == "playing" => {
-                AUDIO.stop();
-                self.tune = "stopped";
-            }
+            P_SOUND => self.stop_tune(),
             P_FILES => clean_files(),
             _ => {}
         }
@@ -348,9 +342,13 @@ impl Tour {
                 self.scale_at = fmrb::uptime_ms();
             }
             (P_SOUND, 0x05) => self.note(1, 988, 90, 14), // B
-            (P_SOUND, 0x1B) => self.silence(),            // X
-            (P_SOUND_PLUS, 0x10) => self.toggle_tune(),   // M
-            (P_SOUND_PLUS, 0x19) => self.play_voice(),    // V
+            (P_SOUND, 0x10) => self.toggle_tune(),        // M
+            (P_SOUND, 0x19) => self.play_voice(),         // V
+            (P_SOUND, 0x1B) => {
+                // X
+                self.silence();
+                self.stop_tune();
+            }
             (P_FILES, _) => self.file_key(sc),
             (P_INPUT, 0x2A) => {
                 // backspace
@@ -662,12 +660,15 @@ impl Tour {
         }
     }
 
-    // ---- page 7: a tune and a voice
+    // the tune and the voice
 
-    fn draw_sound_plus(&self) {
+    fn draw_sound(&self) {
         let rows = [
+            Line::from("S: a scale on pulse 1"),
+            Line::from("B: a beep on pulse 2"),
             Line::from("M: korobeiniki (FMSQ) on / off"),
             Line::from("V: a voice (WAV)"),
+            Line::from("X: stop it all"),
             Line::new(),
             *Line::from("tune   ").push(self.tune),
             *Line::from("voice  ").push(self.voice),
@@ -675,14 +676,19 @@ impl Tour {
         for (i, r) in rows.iter().enumerate() {
             text(6, Y0 + 6 + i as i32 * 12, r.as_str(), INK);
         }
-        text(6, Y0 + 78, TUNE_SRC, INK_SUB);
-        text(6, Y0 + 90, "voice/mahjong/default/pon.wav", INK_SUB);
+        text(6, Y0 + 114, "notes end by the clock", INK_SUB);
+    }
+
+    fn stop_tune(&mut self) {
+        if self.tune == "playing" {
+            AUDIO.stop();
+            self.tune = "stopped";
+        }
     }
 
     fn toggle_tune(&mut self) {
         if self.tune == "playing" {
-            AUDIO.stop();
-            self.tune = "stopped";
+            self.stop_tune();
             return;
         }
         if !self.tune_loaded {
@@ -706,7 +712,7 @@ impl Tour {
         };
     }
 
-    // ---- page 8: files
+    // ---- page 7: files
 
     fn draw_files(&self) {
         let mut size = Line::from("-");
@@ -765,7 +771,7 @@ impl Tour {
         }
     }
 
-    // ---- page 9: input
+    // ---- page 8: input
 
     fn draw_input(&self) {
         text(6, Y0 + 4, "drag inside the box to draw", INK_SUB);
@@ -802,7 +808,7 @@ impl Tour {
         G.present();
     }
 
-    // ---- page 10: the system side
+    // ---- page 9: the system side
 
     fn draw_system(&self) {
         let mut clock = Line::from("-");
@@ -877,22 +883,7 @@ fn tile(sheet: &SpriteImage, i: i32, x: i32, y: i32) {
     G.draw_tile(sheet, 16 * (i % 4), 16 * (i / 4), 16, 16, x, y);
 }
 
-// ---- page 6: sound
-
-fn draw_sound() {
-    let rows = [
-        "S: a scale on pulse 1",
-        "B: a beep on pulse 2",
-        "X: stop",
-        "",
-        "notes end by the clock",
-    ];
-    for (i, r) in rows.iter().enumerate() {
-        text(6, Y0 + 6 + i as i32 * 12, r, if i == 4 { INK_SUB } else { INK });
-    }
-}
-
-// ---- page 8: files
+// ---- page 7: files
 
 fn setup_files() {
     fmrb::file::mkdir(DIR);
@@ -905,13 +896,13 @@ fn clean_files() {
     fmrb::file::delete(DIR);
 }
 
-// ---- page 9: input
+// ---- page 8: input
 
 fn in_pad(x: i32, y: i32) -> bool {
     x > 6 && x < 221 && y > Y0 + 16 && y < Y0 + 99
 }
 
-// ---- page 11: the clipboard, the clock, the app's wasm numbers
+// ---- page 10: the clipboard, the clock, the app's wasm numbers
 
 fn draw_system_plus() {
     let y = |i: i32| Y0 + 6 + i * 11;
