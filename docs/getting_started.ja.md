@@ -291,7 +291,7 @@ default_window_pos_y = 50
 | `exclusive_group` | 名前: 同じグループのアプリが動いている間は起動を断る | なし |
 | `large_memory` | 1: 大きいメモリプールを使う | 0 |
 | `task_stack_kb` | アプリのタスクの C スタック (KB)。wasm のアプリの既定は 24 KB | |
-| `icon` | ランチャーのアイコン。先頭の `/` なしのパス (例 `"app/mine/hello.icon"`) | 文字の `W` |
+| `icon` | ランチャーのアイコン。先頭の `/` なしのパス (例 `"app/mine/hello.icon"`) | wasm のアイコン (`usr/share/icon/wasm.icon`) |
 | `launcher_visible` | `false`: ランチャーに出さず、パス指定の起動だけにする | 出す |
 
 - **カテゴリは `/app` の下のディレクトリで決まる** (`/app/tinygo/`・`/app/mine/` など。どのディレクトリでも
@@ -299,8 +299,12 @@ default_window_pos_y = 50
 - エンジンは拡張子 (`.wasm`) で決まる。`bounce.app.toml` にある `language = "tinygo"` は人向けのメモで、
   ファームウェアは読まない。
 - SDK のバージョンを書くキーは無い。SDK が `.wasm` に入れる (8 章の「SDK のバージョン」)。
-- アイコンは 12x12 の文字の格子 (`.icon`) と、そこから作る BMP を隣に置く (fmruby-core の
-  `tools/gen_icon_bmp.rb`)。書式は fmruby-core の `flash/app/` にある `.icon` をコピーするのが早い。
+- ファームウェアは SDK の言語ごとのアイコンを持っている。`icon = "usr/share/icon/c.icon"` (`tinygo.icon`・
+  `rust.icon`・`zig.icon` も) と書けば、その言語のアイコンになる (端末に入っている例はこの形)。
+- 自分のアイコンは 12x12 の文字の格子 (`.icon`。`1` が点、`.` が空き、色は最初のコメント行の `color=0xNN`
+  (RGB332)) と、そこから作る PNG を隣に置く (fmruby-core の `tools/gen_icon_png.rb <ディレクトリ>`、または
+  そこで `rake icons`)。端末が読むのは PNG。書式は fmruby-core の `flash/usr/share/icon/` にある `.icon` を
+  コピーするのが早い。
 
 ## 6. Rust・Zig・C
 

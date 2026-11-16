@@ -320,7 +320,7 @@ The keys the firmware reads (fmruby-core's app spawner and launcher):
 | `exclusive_group` | a name: refuse the launch while another app of the group runs | none |
 | `large_memory` | 1: take a large memory pool | 0 |
 | `task_stack_kb` | the app task's C stack in KB (wasm apps get 24 KB by default) | |
-| `icon` | the launcher icon, a path without the leading `/` (e.g. `"app/mine/hello.icon"`) | a letter `W` |
+| `icon` | the launcher icon, a path without the leading `/` (e.g. `"app/mine/hello.icon"`) | the wasm icon (`usr/share/icon/wasm.icon`) |
 | `launcher_visible` | `false`: run by path only, not listed in the launcher | listed |
 
 - The **category** is the directory under `/app` (`/app/tinygo/`,
@@ -331,9 +331,14 @@ The keys the firmware reads (fmruby-core's app spawner and launcher):
   line in `bounce.app.toml` is a note for people; the firmware does not read it.
 - There is no key for the SDK version: the SDK puts it into the `.wasm`
   (section 8, "The SDK version").
-- An icon is a 12x12 text grid (`.icon`) and a BMP made from it next to it
-  (fmruby-core's `tools/gen_icon_bmp.rb`); copy the form from an existing
-  `.icon` in fmruby-core's `flash/app/`.
+- The firmware carries an icon per SDK language: `icon =
+  "usr/share/icon/c.icon"` (or `tinygo.icon`, `rust.icon`, `zig.icon`) gives
+  an app its language's icon, which is what the examples on the firmware use.
+- An icon of your own is a 12x12 text grid (`.icon`: `1` set, `.` clear, the
+  colour as `color=0xNN` RGB332 in the first comment line) and the PNG made
+  from it next to it (fmruby-core's `tools/gen_icon_png.rb <dir>`, or `rake
+  icons` there); the firmware loads the PNG. Copy the form from an `.icon`
+  in fmruby-core's `flash/usr/share/icon/`.
 
 ## 6. Rust, Zig and C
 
