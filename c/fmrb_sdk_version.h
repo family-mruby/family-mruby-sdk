@@ -19,7 +19,7 @@
 #define FMRB_SDK_VERSION_PATCH 0
 #define FMRB_SDK_VERSION "0.1.0"
 /** The boundary this version was generated from (FMRB_ABI_HASH of fmrb_boundary.h). */
-#define FMRB_SDK_ABI_HASH 0x922a7dadu
+#define FMRB_SDK_ABI_HASH 0x84e75e43u
 
 /**
  * FMRB_SDK_VERSION_SECTION(); at file scope, in one file of the app, puts

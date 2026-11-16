@@ -213,6 +213,16 @@ func AppWallclock(out unsafe.Pointer) int32
 //go:wasmimport fmrb app_gfx_stats
 func AppGfxStats(out unsafe.Pointer) int32
 
+// AppWasmStats is FmrbApp.wasm_stats(): How the wasm runtime is doing
+//
+//go:wasmimport fmrb app_wasm_stats
+func AppWasmStats(out unsafe.Pointer) int32
+
+// AppWasmAppStats is FmrbApp.wasm_app_stats(pid): How one wasm app is doing
+//
+//go:wasmimport fmrb app_wasm_app_stats
+func AppWasmAppStats(pid int32, out unsafe.Pointer) int32
+
 // AppSetTextCursor is FmrbApp.set_text_cursor(x, y, h): Tell where the text cursor is (for a PC's IME)
 //
 //go:wasmimport fmrb app_set_text_cursor
@@ -584,6 +594,66 @@ func GfxSetSpriteClip(gfx int32, x int32, y int32, w int32, h int32) int32
 //go:wasmimport fmrb gfx_clear_sprite_clip
 func GfxClearSpriteClip(gfx int32) int32
 
+// GfxCreateSpriteImage is FmrbGfx#create_sprite_image(width, height, transparent_color, use_transparent): Make a sprite image
+//
+//go:wasmimport fmrb gfx_create_sprite_image
+func GfxCreateSpriteImage(gfx int32, width int32, height int32, transparentColor int32, useTransparent int32) int32
+
+// GfxDeleteSpriteImage is FmrbGfx#delete_sprite_image(image_id): Let go of a sprite image
+//
+//go:wasmimport fmrb gfx_delete_sprite_image
+func GfxDeleteSpriteImage(gfx int32, imageID int32) int32
+
+// GfxLoadSpriteImage is FmrbGfx#load_sprite_image(image_id, path): Read a PNG or BMP into a sprite image
+//
+//go:wasmimport fmrb gfx_load_sprite_image
+func GfxLoadSpriteImage(gfx int32, imageID int32, path unsafe.Pointer, pathLen int32) int32
+
+// GfxSetSpriteImageTarget is FmrbGfx#set_sprite_image_target(image_id): Draw into a sprite image
+//
+//go:wasmimport fmrb gfx_set_sprite_image_target
+func GfxSetSpriteImageTarget(gfx int32, imageID int32) int32
+
+// GfxCreateSpriteInstance is FmrbGfx#create_sprite_instance(image_ids, x, y, z): Place sprite images on the canvas
+//
+//go:wasmimport fmrb gfx_create_sprite_instance
+func GfxCreateSpriteInstance(gfx int32, imageIds unsafe.Pointer, imageIdsCount int32, x int32, y int32, z int32) int32
+
+// GfxDeleteSpriteInstance is FmrbGfx#delete_sprite_instance(instance_id): Let go of a placed sprite
+//
+//go:wasmimport fmrb gfx_delete_sprite_instance
+func GfxDeleteSpriteInstance(gfx int32, instanceID int32) int32
+
+// GfxMoveSprite is FmrbGfx#move_sprite(instance_id, x, y): Move a placed sprite
+//
+//go:wasmimport fmrb gfx_move_sprite
+func GfxMoveSprite(gfx int32, instanceID int32, x int32, y int32) int32
+
+// GfxSetSpriteVisible is FmrbGfx#set_sprite_visible(instance_id, visible): Show or hide a placed sprite
+//
+//go:wasmimport fmrb gfx_set_sprite_visible
+func GfxSetSpriteVisible(gfx int32, instanceID int32, visible int32) int32
+
+// GfxSetSpriteFrame is FmrbGfx#set_sprite_frame(instance_id, frame): Which frame a placed sprite shows
+//
+//go:wasmimport fmrb gfx_set_sprite_frame
+func GfxSetSpriteFrame(gfx int32, instanceID int32, frame int32) int32
+
+// GfxDeleteAllSprites is FmrbGfx#delete_all_sprites(): Let go of every sprite on this canvas
+//
+//go:wasmimport fmrb gfx_delete_all_sprites
+func GfxDeleteAllSprites(gfx int32) int32
+
+// GfxVideoOpenRaw is FmrbGfx#video_open_raw(path, x, y, fps, loop): video_open with nothing left out
+//
+//go:wasmimport fmrb gfx_video_open_raw
+func GfxVideoOpenRaw(gfx int32, path unsafe.Pointer, pathLen int32, x int32, y int32, fps int32, loop int32, out unsafe.Pointer) int32
+
+// GfxExportFrame is FmrbGfx#export_frame(path): Write the presented picture to a file
+//
+//go:wasmimport fmrb gfx_export_frame
+func GfxExportFrame(gfx int32, path unsafe.Pointer, pathLen int32) int32
+
 // GfxSetOutputLevel is FmrbGfx#set_output_level(level): Set the video brightness
 //
 //go:wasmimport fmrb gfx_set_output_level
@@ -613,6 +683,16 @@ func GfxFileStatus(gfx int32, path unsafe.Pointer, pathLen int32, out unsafe.Poi
 //
 //go:wasmimport fmrb gfx_rgb_to_332
 func GfxRgbTo332(r int32, g int32, b int32) int32
+
+// GfxVideoControl is FmrbGfx.video_control(action): Play, pause, stop or rewind the video
+//
+//go:wasmimport fmrb gfx_video_control
+func GfxVideoControl(action int32, out unsafe.Pointer) int32
+
+// GfxVideoStatus is FmrbGfx.video_status(): The video player's state
+//
+//go:wasmimport fmrb gfx_video_status
+func GfxVideoStatus(out unsafe.Pointer) int32
 
 // ---- Log
 

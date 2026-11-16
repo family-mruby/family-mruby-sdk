@@ -8,7 +8,7 @@ const SDKVersion = "0.1.0"
 
 // ABIHash changes whenever a function, a record or a hook of the boundary
 // changes (FMRB_ABI_HASH in the C header).
-const ABIHash uint32 = 0x922a7dad
+const ABIHash uint32 = 0x84e75e43
 
 // Results of the boundary functions.
 const (
@@ -32,6 +32,14 @@ const (
 	GfxSetFontRawFamilyDefault int32 = 0 // :default (family of FmrbGfx#set_font_raw(family, size))
 	GfxSetFontRawFamilyJa      int32 = 1 // :ja (family of FmrbGfx#set_font_raw(family, size))
 	GfxSetFontRawFamilyJaBold  int32 = 2 // :ja_bold (family of FmrbGfx#set_font_raw(family, size))
+)
+
+// The choices of FmrbGfx.video_control(action) (a Symbol in Ruby).
+const (
+	GfxVideoControlActionPlay   int32 = 0 // :play (action of FmrbGfx.video_control(action))
+	GfxVideoControlActionPause  int32 = 1 // :pause (action of FmrbGfx.video_control(action))
+	GfxVideoControlActionStop   int32 = 2 // :stop (action of FmrbGfx.video_control(action))
+	GfxVideoControlActionRewind int32 = 3 // :rewind (action of FmrbGfx.video_control(action))
 )
 
 // FmrbApp::event.type: the choices (a Symbol in Ruby).
@@ -110,6 +118,95 @@ func (r *AppWallclockRecord) SetSecond(v uint8) {
 type AppGfxStatsRecord struct {
 	Cmds     uint32
 	Presents uint32
+}
+
+// AppWasmStatsRecord is FmrbApp::wasm_stats (fmrb_app_wasm_stats_t, 21 bytes,
+// packed: a Go struct would be laid out differently, so it is the bytes and
+// each field has a getter and a setter).
+type AppWasmStatsRecord [21]byte
+
+func (r *AppWasmStatsRecord) Running() uint8 {
+	return uint8(r[0])
+}
+func (r *AppWasmStatsRecord) SetRunning(v uint8) {
+	r[0] = byte(v)
+}
+
+func (r *AppWasmStatsRecord) Apps() uint8 {
+	return uint8(r[1])
+}
+func (r *AppWasmStatsRecord) SetApps(v uint8) {
+	r[1] = byte(v)
+}
+
+func (r *AppWasmStatsRecord) Modules() uint8 {
+	return uint8(r[2])
+}
+func (r *AppWasmStatsRecord) SetModules(v uint8) {
+	r[2] = byte(v)
+}
+
+func (r *AppWasmStatsRecord) Natives() uint16 {
+	return uint16(r[3]) | uint16(r[4])<<8
+}
+func (r *AppWasmStatsRecord) SetNatives(v uint16) {
+	u := uint16(v)
+	r[3] = byte(u)
+	r[4] = byte(u >> 8)
+}
+
+func (r *AppWasmStatsRecord) PoolTotal() uint32 {
+	return uint32(r[5]) | uint32(r[6])<<8 | uint32(r[7])<<16 | uint32(r[8])<<24
+}
+func (r *AppWasmStatsRecord) SetPoolTotal(v uint32) {
+	u := uint32(v)
+	r[5] = byte(u)
+	r[6] = byte(u >> 8)
+	r[7] = byte(u >> 16)
+	r[8] = byte(u >> 24)
+}
+
+func (r *AppWasmStatsRecord) PoolUsed() uint32 {
+	return uint32(r[9]) | uint32(r[10])<<8 | uint32(r[11])<<16 | uint32(r[12])<<24
+}
+func (r *AppWasmStatsRecord) SetPoolUsed(v uint32) {
+	u := uint32(v)
+	r[9] = byte(u)
+	r[10] = byte(u >> 8)
+	r[11] = byte(u >> 16)
+	r[12] = byte(u >> 24)
+}
+
+func (r *AppWasmStatsRecord) PoolHigh() uint32 {
+	return uint32(r[13]) | uint32(r[14])<<8 | uint32(r[15])<<16 | uint32(r[16])<<24
+}
+func (r *AppWasmStatsRecord) SetPoolHigh(v uint32) {
+	u := uint32(v)
+	r[13] = byte(u)
+	r[14] = byte(u >> 8)
+	r[15] = byte(u >> 16)
+	r[16] = byte(u >> 24)
+}
+
+func (r *AppWasmStatsRecord) Traps() uint32 {
+	return uint32(r[17]) | uint32(r[18])<<8 | uint32(r[19])<<16 | uint32(r[20])<<24
+}
+func (r *AppWasmStatsRecord) SetTraps(v uint32) {
+	u := uint32(v)
+	r[17] = byte(u)
+	r[18] = byte(u >> 8)
+	r[19] = byte(u >> 16)
+	r[20] = byte(u >> 24)
+}
+
+// AppWasmAppStatsRecord is FmrbApp::wasm_app_stats (fmrb_app_wasm_app_stats_t, 24 bytes).
+type AppWasmAppStatsRecord struct {
+	Pages      uint32
+	MaxPages   uint32
+	BinarySize uint32
+	HookUs     uint32
+	HookMaxUs  uint32
+	Calls      uint32
 }
 
 // AudioNsfStatusRecord is FmrbAudio::nsf_status (fmrb_audio_nsf_status_t, 12 bytes).
@@ -196,6 +293,12 @@ func (r *GfxCompositeRegionRecord) SetTransparent(v uint8) {
 	r[12] = byte(v)
 }
 
+// GfxVideoInfoRecord is FmrbGfx::video_info (fmrb_gfx_video_info_t, 4 bytes).
+type GfxVideoInfoRecord struct {
+	Width  uint16
+	Height uint16
+}
+
 // GfxFileInfoRecord is FmrbGfx::file_info (fmrb_gfx_file_info_t, 5 bytes,
 // packed: a Go struct would be laid out differently, so it is the bytes and
 // each field has a getter and a setter).
@@ -217,6 +320,40 @@ func (r *GfxFileInfoRecord) SetSize(v uint32) {
 	r[2] = byte(u >> 8)
 	r[3] = byte(u >> 16)
 	r[4] = byte(u >> 24)
+}
+
+// GfxVideoStatusRecord is FmrbGfx::video_status (fmrb_gfx_video_status_t, 9 bytes,
+// packed: a Go struct would be laid out differently, so it is the bytes and
+// each field has a getter and a setter).
+type GfxVideoStatusRecord [9]byte
+
+func (r *GfxVideoStatusRecord) State() uint8 {
+	return uint8(r[0])
+}
+func (r *GfxVideoStatusRecord) SetState(v uint8) {
+	r[0] = byte(v)
+}
+
+func (r *GfxVideoStatusRecord) Shown() uint32 {
+	return uint32(r[1]) | uint32(r[2])<<8 | uint32(r[3])<<16 | uint32(r[4])<<24
+}
+func (r *GfxVideoStatusRecord) SetShown(v uint32) {
+	u := uint32(v)
+	r[1] = byte(u)
+	r[2] = byte(u >> 8)
+	r[3] = byte(u >> 16)
+	r[4] = byte(u >> 24)
+}
+
+func (r *GfxVideoStatusRecord) Dropped() uint32 {
+	return uint32(r[5]) | uint32(r[6])<<8 | uint32(r[7])<<16 | uint32(r[8])<<24
+}
+func (r *GfxVideoStatusRecord) SetDropped(v uint32) {
+	u := uint32(v)
+	r[5] = byte(u)
+	r[6] = byte(u >> 8)
+	r[7] = byte(u >> 16)
+	r[8] = byte(u >> 24)
 }
 
 // AppEventRecord is FmrbApp::event (fmrb_app_event_t, 60 bytes, given to a hook).

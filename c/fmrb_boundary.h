@@ -51,7 +51,7 @@ extern "C" {
  * refuses an app that imports a function it lacks, before the app starts.
  */
 /** Hash of the function list and records; changes whenever one of them changes. */
-#define FMRB_ABI_HASH 0x922a7dadu
+#define FMRB_ABI_HASH 0x84e75e43u
 
 #define FMRB_BOUNDARY_ERR_FAILED (-1)
 #define FMRB_BOUNDARY_ERR_ARG    (-2)
@@ -88,6 +88,28 @@ typedef struct __attribute__((packed)) {
     uint32_t presents;
 } fmrb_app_gfx_stats_t;
 
+/** FmrbApp::wasm_stats (21 bytes, packed, little-endian) */
+typedef struct __attribute__((packed)) {
+    uint8_t running;
+    uint8_t apps;
+    uint8_t modules;
+    uint16_t natives;
+    uint32_t pool_total;
+    uint32_t pool_used;
+    uint32_t pool_high;
+    uint32_t traps;
+} fmrb_app_wasm_stats_t;
+
+/** FmrbApp::wasm_app_stats (24 bytes, packed, little-endian) */
+typedef struct __attribute__((packed)) {
+    uint32_t pages;
+    uint32_t max_pages;
+    uint32_t binary_size;
+    uint32_t hook_us;
+    uint32_t hook_max_us;
+    uint32_t calls;
+} fmrb_app_wasm_app_stats_t;
+
 /** FmrbAudio::nsf_status (12 bytes, packed, little-endian) */
 typedef struct __attribute__((packed)) {
     uint8_t state;
@@ -117,11 +139,24 @@ typedef struct __attribute__((packed)) {
     uint8_t transparent;  /* 0 or 1 */
 } fmrb_gfx_composite_region_t;
 
+/** FmrbGfx::video_info (4 bytes, packed, little-endian) */
+typedef struct __attribute__((packed)) {
+    uint16_t width;
+    uint16_t height;
+} fmrb_gfx_video_info_t;
+
 /** FmrbGfx::file_info (5 bytes, packed, little-endian) */
 typedef struct __attribute__((packed)) {
     uint8_t exists;  /* 0 or 1 */
     uint32_t size;
 } fmrb_gfx_file_info_t;
+
+/** FmrbGfx::video_status (9 bytes, packed, little-endian) */
+typedef struct __attribute__((packed)) {
+    uint8_t state;
+    uint32_t shown;
+    uint32_t dropped;
+} fmrb_gfx_video_status_t;
 
 /** FmrbApp#platform(): the choices of the result (a Symbol in Ruby) */
 #define FMRB_APP_PLATFORM_ESP32 0
@@ -131,6 +166,12 @@ typedef struct __attribute__((packed)) {
 #define FMRB_GFX_SET_FONT_RAW_FAMILY_DEFAULT 0
 #define FMRB_GFX_SET_FONT_RAW_FAMILY_JA 1
 #define FMRB_GFX_SET_FONT_RAW_FAMILY_JA_BOLD 2
+
+/** FmrbGfx.video_control(action): the choices of action */
+#define FMRB_GFX_VIDEO_CONTROL_ACTION_PLAY 0
+#define FMRB_GFX_VIDEO_CONTROL_ACTION_PAUSE 1
+#define FMRB_GFX_VIDEO_CONTROL_ACTION_STOP 2
+#define FMRB_GFX_VIDEO_CONTROL_ACTION_REWIND 3
 
 /**
  * The app's name
@@ -471,6 +512,24 @@ int32_t fmrb_app_wallclock(fmrb_app_wallclock_t *out);
  */
 FMRB_IMPORT("app_gfx_stats")
 int32_t fmrb_app_gfx_stats(fmrb_app_gfx_stats_t *out);
+
+/**
+ * How the wasm runtime is doing
+ *
+ * Ruby: FmrbApp.wasm_stats()
+ * @return 1 when *out was filled
+ */
+FMRB_IMPORT("app_wasm_stats")
+int32_t fmrb_app_wasm_stats(fmrb_app_wasm_stats_t *out);
+
+/**
+ * How one wasm app is doing
+ *
+ * Ruby: FmrbApp.wasm_app_stats(pid)
+ * @return 1 when *out was filled, 0 when there is none (nil in Ruby)
+ */
+FMRB_IMPORT("app_wasm_app_stats")
+int32_t fmrb_app_wasm_app_stats(int32_t pid, fmrb_app_wasm_app_stats_t *out);
 
 /**
  * Tell where the text cursor is (for a PC's IME)
@@ -1147,6 +1206,117 @@ FMRB_IMPORT("gfx_clear_sprite_clip")
 int32_t fmrb_gfx_clear_sprite_clip(int32_t gfx);
 
 /**
+ * Make a sprite image
+ *
+ * Ruby: FmrbGfx#create_sprite_image(width, height, transparent_color, use_transparent)
+ * @param gfx the FmrbGfx receiver number
+ * @return the value
+ */
+FMRB_IMPORT("gfx_create_sprite_image")
+int32_t fmrb_gfx_create_sprite_image(int32_t gfx, int32_t width, int32_t height, int32_t transparent_color, int32_t use_transparent);
+
+/**
+ * Let go of a sprite image
+ *
+ * Ruby: FmrbGfx#delete_sprite_image(image_id)
+ * @param gfx the FmrbGfx receiver number
+ */
+FMRB_IMPORT("gfx_delete_sprite_image")
+int32_t fmrb_gfx_delete_sprite_image(int32_t gfx, int32_t image_id);
+
+/**
+ * Read a PNG or BMP into a sprite image
+ *
+ * Ruby: FmrbGfx#load_sprite_image(image_id, path)
+ * @param gfx the FmrbGfx receiver number
+ */
+FMRB_IMPORT("gfx_load_sprite_image")
+int32_t fmrb_gfx_load_sprite_image(int32_t gfx, int32_t image_id, const char *path, int32_t path_len);
+
+/**
+ * Draw into a sprite image
+ *
+ * Ruby: FmrbGfx#set_sprite_image_target(image_id)
+ * @param gfx the FmrbGfx receiver number
+ */
+FMRB_IMPORT("gfx_set_sprite_image_target")
+int32_t fmrb_gfx_set_sprite_image_target(int32_t gfx, int32_t image_id);
+
+/**
+ * Place sprite images on the canvas
+ *
+ * Ruby: FmrbGfx#create_sprite_instance(image_ids, x, y, z)
+ * @param gfx the FmrbGfx receiver number
+ * @return the value
+ */
+FMRB_IMPORT("gfx_create_sprite_instance")
+int32_t fmrb_gfx_create_sprite_instance(int32_t gfx, const uint16_t *image_ids, int32_t image_ids_count, int32_t x, int32_t y, int32_t z);
+
+/**
+ * Let go of a placed sprite
+ *
+ * Ruby: FmrbGfx#delete_sprite_instance(instance_id)
+ * @param gfx the FmrbGfx receiver number
+ */
+FMRB_IMPORT("gfx_delete_sprite_instance")
+int32_t fmrb_gfx_delete_sprite_instance(int32_t gfx, int32_t instance_id);
+
+/**
+ * Move a placed sprite
+ *
+ * Ruby: FmrbGfx#move_sprite(instance_id, x, y)
+ * @param gfx the FmrbGfx receiver number
+ */
+FMRB_IMPORT("gfx_move_sprite")
+int32_t fmrb_gfx_move_sprite(int32_t gfx, int32_t instance_id, int32_t x, int32_t y);
+
+/**
+ * Show or hide a placed sprite
+ *
+ * Ruby: FmrbGfx#set_sprite_visible(instance_id, visible)
+ * @param gfx the FmrbGfx receiver number
+ */
+FMRB_IMPORT("gfx_set_sprite_visible")
+int32_t fmrb_gfx_set_sprite_visible(int32_t gfx, int32_t instance_id, int32_t visible);
+
+/**
+ * Which frame a placed sprite shows
+ *
+ * Ruby: FmrbGfx#set_sprite_frame(instance_id, frame)
+ * @param gfx the FmrbGfx receiver number
+ */
+FMRB_IMPORT("gfx_set_sprite_frame")
+int32_t fmrb_gfx_set_sprite_frame(int32_t gfx, int32_t instance_id, int32_t frame);
+
+/**
+ * Let go of every sprite on this canvas
+ *
+ * Ruby: FmrbGfx#delete_all_sprites()
+ * @param gfx the FmrbGfx receiver number
+ */
+FMRB_IMPORT("gfx_delete_all_sprites")
+int32_t fmrb_gfx_delete_all_sprites(int32_t gfx);
+
+/**
+ * video_open with nothing left out
+ *
+ * Ruby: FmrbGfx#video_open_raw(path, x, y, fps, loop)
+ * @param gfx the FmrbGfx receiver number
+ * @return 1 when *out was filled, 0 when there is none (nil in Ruby)
+ */
+FMRB_IMPORT("gfx_video_open_raw")
+int32_t fmrb_gfx_video_open_raw(int32_t gfx, const char *path, int32_t path_len, int32_t x, int32_t y, int32_t fps, int32_t loop, fmrb_gfx_video_info_t *out);
+
+/**
+ * Write the presented picture to a file
+ *
+ * Ruby: FmrbGfx#export_frame(path)
+ * @param gfx the FmrbGfx receiver number
+ */
+FMRB_IMPORT("gfx_export_frame")
+int32_t fmrb_gfx_export_frame(int32_t gfx, const char *path, int32_t path_len);
+
+/**
  * Set the video brightness
  *
  * Ruby: FmrbGfx#set_output_level(level)
@@ -1202,6 +1372,24 @@ int32_t fmrb_gfx_file_status(int32_t gfx, const char *path, int32_t path_len, fm
  */
 FMRB_IMPORT("gfx_rgb_to_332")
 int32_t fmrb_gfx_rgb_to_332(int32_t r, int32_t g, int32_t b);
+
+/**
+ * Play, pause, stop or rewind the video
+ *
+ * Ruby: FmrbGfx.video_control(action)
+ * @return 1 when *out was filled, 0 when there is none (nil in Ruby)
+ */
+FMRB_IMPORT("gfx_video_control")
+int32_t fmrb_gfx_video_control(int32_t action, fmrb_gfx_video_status_t *out);
+
+/**
+ * The video player's state
+ *
+ * Ruby: FmrbGfx.video_status()
+ * @return 1 when *out was filled, 0 when there is none (nil in Ruby)
+ */
+FMRB_IMPORT("gfx_video_status")
+int32_t fmrb_gfx_video_status(fmrb_gfx_video_status_t *out);
 
 /**
  * debug with nothing left out

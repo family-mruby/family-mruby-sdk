@@ -23,7 +23,7 @@ pub const sdk_section = "fmrb.sdk";
 
 /// Changes whenever a function, a record or a hook of the boundary changes
 /// (FMRB_ABI_HASH in the C header).
-pub const abi_hash: u32 = 0x922a7dad;
+pub const abi_hash: u32 = 0x84e75e43;
 
 // Results of the boundary functions.
 pub const err_failed: i32 = -1;
@@ -49,6 +49,16 @@ pub const gfx_set_font_raw_family_default: i32 = 0;
 pub const gfx_set_font_raw_family_ja: i32 = 1;
 /// :ja_bold (family of FmrbGfx#set_font_raw(family, size))
 pub const gfx_set_font_raw_family_ja_bold: i32 = 2;
+
+// The choices of FmrbGfx.video_control(action) (a Symbol in Ruby).
+/// :play (action of FmrbGfx.video_control(action))
+pub const gfx_video_control_action_play: i32 = 0;
+/// :pause (action of FmrbGfx.video_control(action))
+pub const gfx_video_control_action_pause: i32 = 1;
+/// :stop (action of FmrbGfx.video_control(action))
+pub const gfx_video_control_action_stop: i32 = 2;
+/// :rewind (action of FmrbGfx.video_control(action))
+pub const gfx_video_control_action_rewind: i32 = 3;
 
 // FmrbApp::event.type: the choices (a Symbol in Ruby).
 /// :key_down
@@ -122,6 +132,50 @@ pub const AppGfxStats = extern struct {
     }
 };
 
+/// FmrbApp::wasm_stats (fmrb_app_wasm_stats_t, 21 bytes, packed: every field align(1)).
+pub const AppWasmStats = extern struct {
+    running: u8 align(1) = 0,
+    apps: u8 align(1) = 0,
+    modules: u8 align(1) = 0,
+    natives: u16 align(1) = 0,
+    pool_total: u32 align(1) = 0,
+    pool_used: u32 align(1) = 0,
+    pool_high: u32 align(1) = 0,
+    traps: u32 align(1) = 0,
+
+    comptime {
+        if (@sizeOf(AppWasmStats) != 21) @compileError("AppWasmStats: not 21 bytes");
+        if (@offsetOf(AppWasmStats, "running") != 0) @compileError("AppWasmStats.running: not at 0");
+        if (@offsetOf(AppWasmStats, "apps") != 1) @compileError("AppWasmStats.apps: not at 1");
+        if (@offsetOf(AppWasmStats, "modules") != 2) @compileError("AppWasmStats.modules: not at 2");
+        if (@offsetOf(AppWasmStats, "natives") != 3) @compileError("AppWasmStats.natives: not at 3");
+        if (@offsetOf(AppWasmStats, "pool_total") != 5) @compileError("AppWasmStats.pool_total: not at 5");
+        if (@offsetOf(AppWasmStats, "pool_used") != 9) @compileError("AppWasmStats.pool_used: not at 9");
+        if (@offsetOf(AppWasmStats, "pool_high") != 13) @compileError("AppWasmStats.pool_high: not at 13");
+        if (@offsetOf(AppWasmStats, "traps") != 17) @compileError("AppWasmStats.traps: not at 17");
+    }
+};
+
+/// FmrbApp::wasm_app_stats (fmrb_app_wasm_app_stats_t, 24 bytes).
+pub const AppWasmAppStats = extern struct {
+    pages: u32 = 0,
+    max_pages: u32 = 0,
+    binary_size: u32 = 0,
+    hook_us: u32 = 0,
+    hook_max_us: u32 = 0,
+    calls: u32 = 0,
+
+    comptime {
+        if (@sizeOf(AppWasmAppStats) != 24) @compileError("AppWasmAppStats: not 24 bytes");
+        if (@offsetOf(AppWasmAppStats, "pages") != 0) @compileError("AppWasmAppStats.pages: not at 0");
+        if (@offsetOf(AppWasmAppStats, "max_pages") != 4) @compileError("AppWasmAppStats.max_pages: not at 4");
+        if (@offsetOf(AppWasmAppStats, "binary_size") != 8) @compileError("AppWasmAppStats.binary_size: not at 8");
+        if (@offsetOf(AppWasmAppStats, "hook_us") != 12) @compileError("AppWasmAppStats.hook_us: not at 12");
+        if (@offsetOf(AppWasmAppStats, "hook_max_us") != 16) @compileError("AppWasmAppStats.hook_max_us: not at 16");
+        if (@offsetOf(AppWasmAppStats, "calls") != 20) @compileError("AppWasmAppStats.calls: not at 20");
+    }
+};
+
 /// FmrbAudio::nsf_status (fmrb_audio_nsf_status_t, 12 bytes).
 pub const AudioNsfStatus = extern struct {
     state: u8 = 0,
@@ -180,6 +234,18 @@ pub const GfxCompositeRegion = extern struct {
     }
 };
 
+/// FmrbGfx::video_info (fmrb_gfx_video_info_t, 4 bytes).
+pub const GfxVideoInfo = extern struct {
+    width: u16 = 0,
+    height: u16 = 0,
+
+    comptime {
+        if (@sizeOf(GfxVideoInfo) != 4) @compileError("GfxVideoInfo: not 4 bytes");
+        if (@offsetOf(GfxVideoInfo, "width") != 0) @compileError("GfxVideoInfo.width: not at 0");
+        if (@offsetOf(GfxVideoInfo, "height") != 2) @compileError("GfxVideoInfo.height: not at 2");
+    }
+};
+
 /// FmrbGfx::file_info (fmrb_gfx_file_info_t, 5 bytes, packed: every field align(1)).
 pub const GfxFileInfo = extern struct {
     exists: u8 align(1) = 0, // 0 or 1
@@ -189,6 +255,20 @@ pub const GfxFileInfo = extern struct {
         if (@sizeOf(GfxFileInfo) != 5) @compileError("GfxFileInfo: not 5 bytes");
         if (@offsetOf(GfxFileInfo, "exists") != 0) @compileError("GfxFileInfo.exists: not at 0");
         if (@offsetOf(GfxFileInfo, "size") != 1) @compileError("GfxFileInfo.size: not at 1");
+    }
+};
+
+/// FmrbGfx::video_status (fmrb_gfx_video_status_t, 9 bytes, packed: every field align(1)).
+pub const GfxVideoStatus = extern struct {
+    state: u8 align(1) = 0,
+    shown: u32 align(1) = 0,
+    dropped: u32 align(1) = 0,
+
+    comptime {
+        if (@sizeOf(GfxVideoStatus) != 9) @compileError("GfxVideoStatus: not 9 bytes");
+        if (@offsetOf(GfxVideoStatus, "state") != 0) @compileError("GfxVideoStatus.state: not at 0");
+        if (@offsetOf(GfxVideoStatus, "shown") != 1) @compileError("GfxVideoStatus.shown: not at 1");
+        if (@offsetOf(GfxVideoStatus, "dropped") != 5) @compileError("GfxVideoStatus.dropped: not at 5");
     }
 };
 
@@ -348,6 +428,12 @@ pub extern "fmrb" fn app_wallclock(out: ?*AppWallclock) i32;
 
 /// FmrbApp.gfx_stats(): A tally of the frames sent
 pub extern "fmrb" fn app_gfx_stats(out: ?*AppGfxStats) i32;
+
+/// FmrbApp.wasm_stats(): How the wasm runtime is doing
+pub extern "fmrb" fn app_wasm_stats(out: ?*AppWasmStats) i32;
+
+/// FmrbApp.wasm_app_stats(pid): How one wasm app is doing
+pub extern "fmrb" fn app_wasm_app_stats(pid: i32, out: ?*AppWasmAppStats) i32;
 
 /// FmrbApp.set_text_cursor(x, y, h): Tell where the text cursor is (for a PC's IME)
 pub extern "fmrb" fn app_set_text_cursor(x: i32, y: i32, h: i32) i32;
@@ -574,6 +660,42 @@ pub extern "fmrb" fn gfx_set_sprite_clip(gfx: i32, x: i32, y: i32, w: i32, h: i3
 /// FmrbGfx#clear_sprite_clip(): let sprites use the whole canvas
 pub extern "fmrb" fn gfx_clear_sprite_clip(gfx: i32) i32;
 
+/// FmrbGfx#create_sprite_image(width, height, transparent_color, use_transparent): Make a sprite image
+pub extern "fmrb" fn gfx_create_sprite_image(gfx: i32, width: i32, height: i32, transparent_color: i32, use_transparent: i32) i32;
+
+/// FmrbGfx#delete_sprite_image(image_id): Let go of a sprite image
+pub extern "fmrb" fn gfx_delete_sprite_image(gfx: i32, image_id: i32) i32;
+
+/// FmrbGfx#load_sprite_image(image_id, path): Read a PNG or BMP into a sprite image
+pub extern "fmrb" fn gfx_load_sprite_image(gfx: i32, image_id: i32, path: ?[*]const u8, path_len: i32) i32;
+
+/// FmrbGfx#set_sprite_image_target(image_id): Draw into a sprite image
+pub extern "fmrb" fn gfx_set_sprite_image_target(gfx: i32, image_id: i32) i32;
+
+/// FmrbGfx#create_sprite_instance(image_ids, x, y, z): Place sprite images on the canvas
+pub extern "fmrb" fn gfx_create_sprite_instance(gfx: i32, image_ids: ?[*]const u16, image_ids_count: i32, x: i32, y: i32, z: i32) i32;
+
+/// FmrbGfx#delete_sprite_instance(instance_id): Let go of a placed sprite
+pub extern "fmrb" fn gfx_delete_sprite_instance(gfx: i32, instance_id: i32) i32;
+
+/// FmrbGfx#move_sprite(instance_id, x, y): Move a placed sprite
+pub extern "fmrb" fn gfx_move_sprite(gfx: i32, instance_id: i32, x: i32, y: i32) i32;
+
+/// FmrbGfx#set_sprite_visible(instance_id, visible): Show or hide a placed sprite
+pub extern "fmrb" fn gfx_set_sprite_visible(gfx: i32, instance_id: i32, visible: i32) i32;
+
+/// FmrbGfx#set_sprite_frame(instance_id, frame): Which frame a placed sprite shows
+pub extern "fmrb" fn gfx_set_sprite_frame(gfx: i32, instance_id: i32, frame: i32) i32;
+
+/// FmrbGfx#delete_all_sprites(): Let go of every sprite on this canvas
+pub extern "fmrb" fn gfx_delete_all_sprites(gfx: i32) i32;
+
+/// FmrbGfx#video_open_raw(path, x, y, fps, loop): video_open with nothing left out
+pub extern "fmrb" fn gfx_video_open_raw(gfx: i32, path: ?[*]const u8, path_len: i32, x: i32, y: i32, fps: i32, loop: i32, out: ?*GfxVideoInfo) i32;
+
+/// FmrbGfx#export_frame(path): Write the presented picture to a file
+pub extern "fmrb" fn gfx_export_frame(gfx: i32, path: ?[*]const u8, path_len: i32) i32;
+
 /// FmrbGfx#set_output_level(level): Set the video brightness
 pub extern "fmrb" fn gfx_set_output_level(gfx: i32, level: i32) i32;
 
@@ -591,6 +713,12 @@ pub extern "fmrb" fn gfx_file_status(gfx: i32, path: ?[*]const u8, path_len: i32
 
 /// FmrbGfx.rgb_to_332(r, g, b): Make a colour from red, green and blue
 pub extern "fmrb" fn gfx_rgb_to_332(r: i32, g: i32, b: i32) i32;
+
+/// FmrbGfx.video_control(action): Play, pause, stop or rewind the video
+pub extern "fmrb" fn gfx_video_control(action: i32, out: ?*GfxVideoStatus) i32;
+
+/// FmrbGfx.video_status(): The video player's state
+pub extern "fmrb" fn gfx_video_status(out: ?*GfxVideoStatus) i32;
 
 // ---- Log
 

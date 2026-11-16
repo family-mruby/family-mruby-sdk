@@ -140,6 +140,12 @@ unsafe extern "C" {
     /// FmrbApp.gfx_stats(): A tally of the frames sent
     pub fn app_gfx_stats(out: *mut AppGfxStats) -> i32;
 
+    /// FmrbApp.wasm_stats(): How the wasm runtime is doing
+    pub fn app_wasm_stats(out: *mut AppWasmStats) -> i32;
+
+    /// FmrbApp.wasm_app_stats(pid): How one wasm app is doing
+    pub fn app_wasm_app_stats(pid: i32, out: *mut AppWasmAppStats) -> i32;
+
     /// FmrbApp.set_text_cursor(x, y, h): Tell where the text cursor is (for a PC's IME)
     pub fn app_set_text_cursor(x: i32, y: i32, h: i32) -> i32;
 
@@ -365,6 +371,42 @@ unsafe extern "C" {
     /// FmrbGfx#clear_sprite_clip(): let sprites use the whole canvas
     pub fn gfx_clear_sprite_clip(gfx: i32) -> i32;
 
+    /// FmrbGfx#create_sprite_image(width, height, transparent_color, use_transparent): Make a sprite image
+    pub fn gfx_create_sprite_image(gfx: i32, width: i32, height: i32, transparent_color: i32, use_transparent: i32) -> i32;
+
+    /// FmrbGfx#delete_sprite_image(image_id): Let go of a sprite image
+    pub fn gfx_delete_sprite_image(gfx: i32, image_id: i32) -> i32;
+
+    /// FmrbGfx#load_sprite_image(image_id, path): Read a PNG or BMP into a sprite image
+    pub fn gfx_load_sprite_image(gfx: i32, image_id: i32, path: *const u8, path_len: i32) -> i32;
+
+    /// FmrbGfx#set_sprite_image_target(image_id): Draw into a sprite image
+    pub fn gfx_set_sprite_image_target(gfx: i32, image_id: i32) -> i32;
+
+    /// FmrbGfx#create_sprite_instance(image_ids, x, y, z): Place sprite images on the canvas
+    pub fn gfx_create_sprite_instance(gfx: i32, image_ids: *const u16, image_ids_count: i32, x: i32, y: i32, z: i32) -> i32;
+
+    /// FmrbGfx#delete_sprite_instance(instance_id): Let go of a placed sprite
+    pub fn gfx_delete_sprite_instance(gfx: i32, instance_id: i32) -> i32;
+
+    /// FmrbGfx#move_sprite(instance_id, x, y): Move a placed sprite
+    pub fn gfx_move_sprite(gfx: i32, instance_id: i32, x: i32, y: i32) -> i32;
+
+    /// FmrbGfx#set_sprite_visible(instance_id, visible): Show or hide a placed sprite
+    pub fn gfx_set_sprite_visible(gfx: i32, instance_id: i32, visible: i32) -> i32;
+
+    /// FmrbGfx#set_sprite_frame(instance_id, frame): Which frame a placed sprite shows
+    pub fn gfx_set_sprite_frame(gfx: i32, instance_id: i32, frame: i32) -> i32;
+
+    /// FmrbGfx#delete_all_sprites(): Let go of every sprite on this canvas
+    pub fn gfx_delete_all_sprites(gfx: i32) -> i32;
+
+    /// FmrbGfx#video_open_raw(path, x, y, fps, loop): video_open with nothing left out
+    pub fn gfx_video_open_raw(gfx: i32, path: *const u8, path_len: i32, x: i32, y: i32, fps: i32, r#loop: i32, out: *mut GfxVideoInfo) -> i32;
+
+    /// FmrbGfx#export_frame(path): Write the presented picture to a file
+    pub fn gfx_export_frame(gfx: i32, path: *const u8, path_len: i32) -> i32;
+
     /// FmrbGfx#set_output_level(level): Set the video brightness
     pub fn gfx_set_output_level(gfx: i32, level: i32) -> i32;
 
@@ -382,6 +424,12 @@ unsafe extern "C" {
 
     /// FmrbGfx.rgb_to_332(r, g, b): Make a colour from red, green and blue
     pub fn gfx_rgb_to_332(r: i32, g: i32, b: i32) -> i32;
+
+    /// FmrbGfx.video_control(action): Play, pause, stop or rewind the video
+    pub fn gfx_video_control(action: i32, out: *mut GfxVideoStatus) -> i32;
+
+    /// FmrbGfx.video_status(): The video player's state
+    pub fn gfx_video_status(out: *mut GfxVideoStatus) -> i32;
 
     // ---- Log
 

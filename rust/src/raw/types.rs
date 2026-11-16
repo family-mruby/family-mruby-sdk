@@ -14,7 +14,7 @@ pub const SDK_VERSION_SECTION: [u8; 5] = *b"0.1.0";
 
 /// Changes whenever a function, a record or a hook of the boundary changes
 /// (FMRB_ABI_HASH in the C header).
-pub const ABI_HASH: u32 = 0x922a7dad;
+pub const ABI_HASH: u32 = 0x84e75e43;
 
 // Results of the boundary functions.
 pub const ERR_FAILED: i32 = -1;
@@ -39,6 +39,16 @@ pub const GFX_SET_FONT_RAW_FAMILY_DEFAULT: i32 = 0;
 pub const GFX_SET_FONT_RAW_FAMILY_JA: i32 = 1;
 /// :ja_bold (family of FmrbGfx#set_font_raw(family, size))
 pub const GFX_SET_FONT_RAW_FAMILY_JA_BOLD: i32 = 2;
+
+// The choices of FmrbGfx.video_control(action) (a Symbol in Ruby).
+/// :play (action of FmrbGfx.video_control(action))
+pub const GFX_VIDEO_CONTROL_ACTION_PLAY: i32 = 0;
+/// :pause (action of FmrbGfx.video_control(action))
+pub const GFX_VIDEO_CONTROL_ACTION_PAUSE: i32 = 1;
+/// :stop (action of FmrbGfx.video_control(action))
+pub const GFX_VIDEO_CONTROL_ACTION_STOP: i32 = 2;
+/// :rewind (action of FmrbGfx.video_control(action))
+pub const GFX_VIDEO_CONTROL_ACTION_REWIND: i32 = 3;
 
 // FmrbApp::event.type: the choices (a Symbol in Ruby).
 /// :key_down
@@ -109,6 +119,48 @@ const _: () = assert!(core::mem::size_of::<AppGfxStats>() == 8);
 const _: () = assert!(core::mem::offset_of!(AppGfxStats, cmds) == 0);
 const _: () = assert!(core::mem::offset_of!(AppGfxStats, presents) == 4);
 
+/// FmrbApp::wasm_stats (fmrb_app_wasm_stats_t, 21 bytes, packed).
+#[repr(C, packed)]
+#[derive(Clone, Copy, Default)]
+pub struct AppWasmStats {
+    pub running: u8,
+    pub apps: u8,
+    pub modules: u8,
+    pub natives: u16,
+    pub pool_total: u32,
+    pub pool_used: u32,
+    pub pool_high: u32,
+    pub traps: u32,
+}
+const _: () = assert!(core::mem::size_of::<AppWasmStats>() == 21);
+const _: () = assert!(core::mem::offset_of!(AppWasmStats, running) == 0);
+const _: () = assert!(core::mem::offset_of!(AppWasmStats, apps) == 1);
+const _: () = assert!(core::mem::offset_of!(AppWasmStats, modules) == 2);
+const _: () = assert!(core::mem::offset_of!(AppWasmStats, natives) == 3);
+const _: () = assert!(core::mem::offset_of!(AppWasmStats, pool_total) == 5);
+const _: () = assert!(core::mem::offset_of!(AppWasmStats, pool_used) == 9);
+const _: () = assert!(core::mem::offset_of!(AppWasmStats, pool_high) == 13);
+const _: () = assert!(core::mem::offset_of!(AppWasmStats, traps) == 17);
+
+/// FmrbApp::wasm_app_stats (fmrb_app_wasm_app_stats_t, 24 bytes).
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct AppWasmAppStats {
+    pub pages: u32,
+    pub max_pages: u32,
+    pub binary_size: u32,
+    pub hook_us: u32,
+    pub hook_max_us: u32,
+    pub calls: u32,
+}
+const _: () = assert!(core::mem::size_of::<AppWasmAppStats>() == 24);
+const _: () = assert!(core::mem::offset_of!(AppWasmAppStats, pages) == 0);
+const _: () = assert!(core::mem::offset_of!(AppWasmAppStats, max_pages) == 4);
+const _: () = assert!(core::mem::offset_of!(AppWasmAppStats, binary_size) == 8);
+const _: () = assert!(core::mem::offset_of!(AppWasmAppStats, hook_us) == 12);
+const _: () = assert!(core::mem::offset_of!(AppWasmAppStats, hook_max_us) == 16);
+const _: () = assert!(core::mem::offset_of!(AppWasmAppStats, calls) == 20);
+
 /// FmrbAudio::nsf_status (fmrb_audio_nsf_status_t, 12 bytes).
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -164,6 +216,17 @@ const _: () = assert!(core::mem::offset_of!(GfxCompositeRegion, w) == 8);
 const _: () = assert!(core::mem::offset_of!(GfxCompositeRegion, h) == 10);
 const _: () = assert!(core::mem::offset_of!(GfxCompositeRegion, transparent) == 12);
 
+/// FmrbGfx::video_info (fmrb_gfx_video_info_t, 4 bytes).
+#[repr(C)]
+#[derive(Clone, Copy, Default)]
+pub struct GfxVideoInfo {
+    pub width: u16,
+    pub height: u16,
+}
+const _: () = assert!(core::mem::size_of::<GfxVideoInfo>() == 4);
+const _: () = assert!(core::mem::offset_of!(GfxVideoInfo, width) == 0);
+const _: () = assert!(core::mem::offset_of!(GfxVideoInfo, height) == 2);
+
 /// FmrbGfx::file_info (fmrb_gfx_file_info_t, 5 bytes, packed).
 #[repr(C, packed)]
 #[derive(Clone, Copy, Default)]
@@ -174,6 +237,19 @@ pub struct GfxFileInfo {
 const _: () = assert!(core::mem::size_of::<GfxFileInfo>() == 5);
 const _: () = assert!(core::mem::offset_of!(GfxFileInfo, exists) == 0);
 const _: () = assert!(core::mem::offset_of!(GfxFileInfo, size) == 1);
+
+/// FmrbGfx::video_status (fmrb_gfx_video_status_t, 9 bytes, packed).
+#[repr(C, packed)]
+#[derive(Clone, Copy, Default)]
+pub struct GfxVideoStatus {
+    pub state: u8,
+    pub shown: u32,
+    pub dropped: u32,
+}
+const _: () = assert!(core::mem::size_of::<GfxVideoStatus>() == 9);
+const _: () = assert!(core::mem::offset_of!(GfxVideoStatus, state) == 0);
+const _: () = assert!(core::mem::offset_of!(GfxVideoStatus, shown) == 1);
+const _: () = assert!(core::mem::offset_of!(GfxVideoStatus, dropped) == 5);
 
 /// FmrbApp::event (fmrb_app_event_t, 60 bytes, given to a hook).
 #[repr(C)]
