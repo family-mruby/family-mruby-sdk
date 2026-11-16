@@ -18,6 +18,7 @@ fmruby-core のジェネレータがそれをデータ (`boundary/boundary.json`
 | `boundary/boundary.json` | 境界のデータ (fmruby-core から。手で編集しない) |
 | `c/fmrb_boundary.h` | 境界の C のヘッダ (fmruby-core から。手で編集しない) |
 | `c/fmrb_sdk_version.h` | C 向けの SDK のバージョンと `FMRB_SDK_VERSION_SECTION()` (生成) |
+| `c/fmrb.h` | C の補助 (手書き、ヘッダだけ、使わなくてもよい: C の文字列・テキストバッファ・`FMRB_APP_SETUP()`) |
 | `tinygo/fmrb/` | TinyGo のパッケージ (手書き: フック・Window・App など) |
 | `tinygo/fmrb/raw/` | TinyGo 向けの境界の全関数・レコード・列挙型と、バージョンを custom section に入れる `version.go` (生成) |
 | `tinygo/fmrb.json` | アプリのビルドに使う TinyGo のターゲットファイル |

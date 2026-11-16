@@ -16,7 +16,7 @@ Window の中に描く。
 | TinyGo | `go get github.com/family-mruby/family-mruby-sdk/tinygo` | `tinygo build -target=fmrb.json` | `hello`・`tour`・`bounce` |
 | Rust | `cargo add --git https://github.com/family-mruby/family-mruby-sdk family-mruby-sdk` | `cargo build --release` | `hello`・`tour` |
 | Zig | `zig fetch --save git+https://github.com/family-mruby/family-mruby-sdk` | `zig build` (SDK の `addApp`) | `hello`・`tour` |
-| C | `c/` の 2 つのヘッダ (コピーか git の submodule) | `zig cc` か clang の 1 行 (か小さな Makefile) | `hello`・`tour` |
+| C | `c/` のヘッダ (コピーか git の submodule) | `zig cc` か clang の 1 行 (か小さな Makefile) | `hello`・`tour` |
 
 どの言語からも同じ関数 (描画、文字、画像、音、ファイル、ログ、時計、アプリの情報、入力) を使える。
 ファームウェア自身の定義から生成したバインディングの上に、その言語らしく書ける手書きの層が載っている。
@@ -62,17 +62,17 @@ wasm のアプリは ESP32-S3 のボード (Retro) では動かない。詳し�
 
 ## サンプル
 
-どの言語にも `tour` がある。hello に主な機能を 11 ページで一通り足したもの (図形、文字と日本語、画像、
-スプライト、タイル、音、FMSQ の曲と WAV の声、ファイル、ポインタで描く線と打ったキー、アプリの情報と時計、
+どの言語にも `tour` がある。hello に主な機能を 10 ページで一通り足したもの (図形、文字と日本語、画像、
+スプライト、タイル、音と FMSQ の曲と WAV の声、ファイル、ポインタで描く線と打ったキー、アプリの情報と時計、
 クリップボードとアプリ自身の wasm の数値) で、どの言語でも内容と画面がドット単位で同じなので書き方を比べられる。どの言語にも `hello` (入門ガイドで作るいちばん小さいアプリ) があり、TinyGo には `bounce`
 (小さなアニメーション) もある。
 
 | tour | .wasm のサイズ (SDK 0.1.0) |
 |---|---|
-| TinyGo | 29,434 B |
-| Rust | 25,509 B |
-| Zig | 24,267 B |
-| C | 19,226 B |
+| TinyGo | 29,329 B |
+| Rust | 25,389 B |
+| Zig | 24,162 B |
+| C | 14,462 B |
 
 このリポジトリの checkout では、サンプルは SDK のメンテナが使うスクリプトでビルドする (Ruby 3.x。出力先は
 `<言語>/build/`、または `-o <ディレクトリ>`):
@@ -91,7 +91,7 @@ ruby c/build.rb hello
 | `tinygo/` | Go のモジュール `github.com/family-mruby/family-mruby-sdk/tinygo`: パッケージ `fmrb` (ほかの関数は `fmrb/raw`)、ターゲットファイル `fmrb.json`、サンプル |
 | `rust/` | crate `family-mruby-sdk` (ライブラリ名 `fmrb`。ほかの関数は `fmrb::raw`)、アプリにコピーする `.cargo/config.toml`、サンプル |
 | `build.zig`・`build.zig.zon`・`zig/` | Zig のパッケージ `family_mruby_sdk` (`zig fetch` はリポジトリ全体を取るのでルートに置く): モジュール `fmrb` は `zig/src/` (ほかの関数は `fmrb.raw`)、`addApp`。サンプルは `zig/examples/` |
-| `c/` | ヘッダ `fmrb_boundary.h` (全関数・レコード・フック) と `fmrb_sdk_version.h`、サンプル (`hello` に Makefile) |
+| `c/` | ヘッダ `fmrb_boundary.h` (全関数・レコード・フック)・`fmrb_sdk_version.h`・使わなくてもよい補助の `fmrb.h`、サンプル (`hello` に Makefile) |
 | `<言語>/build.rb` | サンプルのビルド (メンテナ向け) |
 | `tools/check_bindings.rb` | ビルドしたアプリの import・フック・SDK のバージョンのチェック |
 | `docs/` | 入門ガイドと tour の仕様 |

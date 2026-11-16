@@ -22,6 +22,7 @@ hand-written layer of each language sits on top of them.
 | `boundary/boundary.json` | the boundary as data (from fmruby-core; do not edit) |
 | `c/fmrb_boundary.h` | the C header of the boundary (from fmruby-core; do not edit) |
 | `c/fmrb_sdk_version.h` | the SDK version for C, and `FMRB_SDK_VERSION_SECTION()` (generated) |
+| `c/fmrb.h` | the C helpers (hand-written, header-only, optional: C strings, a text buffer, `FMRB_APP_SETUP()`) |
 | `tinygo/fmrb/` | the TinyGo package (hand-written: hooks, Window, App, ...) |
 | `tinygo/fmrb/raw/` | every boundary function, record and choice for TinyGo, and `version.go`, which puts the version in the custom section (generated) |
 | `tinygo/fmrb.json` | the TinyGo target file apps build with |

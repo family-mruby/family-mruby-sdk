@@ -19,7 +19,7 @@ names and shapes may still change.
 | TinyGo | `go get github.com/family-mruby/family-mruby-sdk/tinygo` | `tinygo build -target=fmrb.json` | `hello`, `tour`, `bounce` |
 | Rust | `cargo add --git https://github.com/family-mruby/family-mruby-sdk family-mruby-sdk` | `cargo build --release` | `hello`, `tour` |
 | Zig | `zig fetch --save git+https://github.com/family-mruby/family-mruby-sdk` | `zig build` (the SDK's `addApp`) | `hello`, `tour` |
-| C | the two headers of `c/` (copied, or a git submodule) | `zig cc` or clang, one line (or a small Makefile) | `hello`, `tour` |
+| C | the headers of `c/` (copied, or a git submodule) | `zig cc` or clang, one line (or a small Makefile) | `hello`, `tour` |
 
 Every language offers the same functions (drawing, text, pictures, sound,
 files, the log, clocks, the app's information, input), generated from the
@@ -71,8 +71,8 @@ of an app, the hooks and the troubleshooting table are in the guide.
 ## Samples
 
 Every language has `tour`: hello plus a tour of the main functions over
-eleven pages (shapes, text and Japanese text, a picture, sprites, tiles,
-sound, an FMSQ tune and a WAV voice, files, pointer drawing and typed keys,
+ten pages (shapes, text and Japanese text, a picture, sprites, tiles,
+sound with an FMSQ tune and a WAV voice, files, pointer drawing and typed keys,
 the app's information and clocks, the clipboard and the app's own wasm
 numbers) with the same content and screen in each language, down to the
 pixel, so they can be compared. Every language also has `hello`
@@ -81,10 +81,10 @@ animation).
 
 | tour | Size of the .wasm (SDK 0.1.0) |
 |---|---|
-| TinyGo | 29,434 B |
-| Rust | 25,509 B |
-| Zig | 24,267 B |
-| C | 19,226 B |
+| TinyGo | 29,329 B |
+| Rust | 25,389 B |
+| Zig | 24,162 B |
+| C | 14,462 B |
 
 In a checkout of this repository the samples are built by the scripts the
 SDK's maintainers use (Ruby 3.x; output in `<language>/build/`, or `-o
@@ -104,7 +104,7 @@ ruby c/build.rb hello
 | `tinygo/` | the Go module `github.com/family-mruby/family-mruby-sdk/tinygo`: the package `fmrb` (everything else in `fmrb/raw`), the target file `fmrb.json`, the samples |
 | `rust/` | the crate `family-mruby-sdk` (library `fmrb`; everything else in `fmrb::raw`), `.cargo/config.toml` to copy into an app, the samples |
 | `build.zig`, `build.zig.zon`, `zig/` | the Zig package `family_mruby_sdk` (at the root, as `zig fetch` takes the whole repository): the module `fmrb` in `zig/src/` (everything else in `fmrb.raw`), `addApp`; the samples in `zig/examples/` |
-| `c/` | the headers `fmrb_boundary.h` (every function, record and hook) and `fmrb_sdk_version.h`; the samples (`hello` has a Makefile) |
+| `c/` | the headers `fmrb_boundary.h` (every function, record and hook), `fmrb_sdk_version.h` and the optional helpers `fmrb.h`; the samples (`hello` has a Makefile) |
 | `<language>/build.rb` | build a sample (for maintainers) |
 | `tools/check_bindings.rb` | check a built app's imports, hooks and SDK version |
 | `docs/` | the guide and the tour's specification |

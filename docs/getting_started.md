@@ -126,7 +126,7 @@ What the module has:
 
 The SDK's repository (<https://github.com/family-mruby/family-mruby-sdk>)
 also has samples for every language (`<language>/examples/`), among them
-`tour`, which goes through the main functions in eleven pages; you do not need
+`tour`, which goes through the main functions in ten pages; you do not need
 a checkout of it to write an app.
 
 ## 4. The shape of an app
@@ -194,7 +194,7 @@ func main() {}
 The SDK's `tinygo/examples/tour` goes further: shapes, Japanese text, a picture,
 sprites, tiles, sound, an FMSQ tune and a WAV voice, files, drawing with the
 pointer, typed keys, clocks, the clipboard and the app's information and wasm
-numbers over eleven pages. It is the same app
+numbers over ten pages. It is the same app
 in every SDK language (`c/examples/tour/app.c` for C; the specification is
 `docs/tour.md`), so it is also the place to see how a language writes each
 thing. What the `fmrb` package does not wrap is in `fmrb/raw` (generated, one
@@ -508,13 +508,14 @@ Everything else is in `fmrb.raw`. The SDK's `zig/examples/hello` and
 
 The SDK is two headers in the repository's `c/` directory:
 `fmrb_boundary.h` (every function, record and hook) and
-`fmrb_sdk_version.h`. Copy them into your project, or add the repository as
-a git submodule:
+`fmrb_sdk_version.h`, and a third you may add, `fmrb.h` (below). Copy them
+into your project, or add the repository as a git submodule:
 
 ```
 mkdir hello && cd hello
 curl -O https://raw.githubusercontent.com/family-mruby/family-mruby-sdk/main/c/fmrb_boundary.h
 curl -O https://raw.githubusercontent.com/family-mruby/family-mruby-sdk/main/c/fmrb_sdk_version.h
+curl -O https://raw.githubusercontent.com/family-mruby/family-mruby-sdk/main/c/fmrb.h   # optional
 ```
 
 A C app includes both and calls the flat functions
@@ -540,9 +541,19 @@ clang --target=wasm32 -nostdlib -Os -I. -Wl,--no-entry -Wl,-z,stack-size=16384 -
 ```
 
 There is no libc (`-nostdlib`) and no entry point (the firmware calls the
-hooks). Define `memcpy` and `memset` yourself if the compiler asks for them
-(`c/examples/tour/app.c` does). Strings are a pointer and a length, not
-NUL-terminated. With more files, a small Makefile does it (as the SDK's
+hooks). Define `memcpy` and `memset` yourself if the compiler asks for them.
+Strings are a pointer and a length, not NUL-terminated.
+
+`fmrb.h` is the hand-written C layer, the counterpart of the other
+languages' thin layers; it includes the other two. One line,
+`FMRB_APP_SETUP();`, stands for the two above plus `memcpy` and `memset`.
+It has functions that take C strings (the names end in `_s`:
+`fmrb_draw_text_s(FMRB_WINDOW, x, y, "hi", color, bg)`,
+`fmrb_file_write_s`, `fmrb_log_info_s`, `fmrb_app_name_s(buf, size)`, ...),
+a text buffer for building lines (`fmrb_text_t` with `fmrb_put`,
+`fmrb_put_int`, ...), `FMRB_WINDOW`, `FMRB_AUDIO`, `FMRB_RGB`, and
+`fmrb_event_char` for the event record. Its functions are static, so the
+ones an app does not call cost nothing. `c/examples/tour/app.c` uses it. With more files, a small Makefile does it (as the SDK's
 `c/examples/hello/Makefile`; `FMRB_SDK` is where the headers are, for
 example `family-mruby-sdk/c` with a submodule; the SDK's copy has `../..`):
 

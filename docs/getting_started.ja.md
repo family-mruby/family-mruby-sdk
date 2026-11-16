@@ -109,7 +109,7 @@ tinygo build -target=fmrb.json -o hello.app.wasm .
 | `github.com/family-mruby/family-mruby-sdk/tinygo/fmrb/raw` | 境界のすべての関数・レコード・選択肢 (生成物) |
 
 SDK のリポジトリ (<https://github.com/family-mruby/family-mruby-sdk>) には言語ごとのサンプル
-(`<言語>/examples/`) もあり、主な機能を 11 ページで見せる `tour` もそこにある。アプリを書くのにリポジトリの
+(`<言語>/examples/`) もあり、主な機能を 10 ページで見せる `tour` もそこにある。アプリを書くのにリポジトリの
 checkout は要らない。
 
 ## 4. アプリの形
@@ -175,7 +175,7 @@ func main() {}
 
 SDK の `tinygo/examples/tour` はもう一歩進んだサンプルで、図形・日本語の文字・画像・スプライト・タイル・音・
 FMSQ の曲と WAV の声・ファイル・ポインタで描く線・打ったキー・時計・クリップボード・アプリの情報と wasm の数値を
-11 ページで見せる。SDK のどの言語でも同じアプリ (C は `c/examples/tour/app.c`。仕様は `docs/tour.md`) なので、
+10 ページで見せる。SDK のどの言語でも同じアプリ (C は `c/examples/tour/app.c`。仕様は `docs/tour.md`) なので、
 言語ごとの書き方を比べる場所にもなる。`fmrb` パッケージがラップしていないものは `fmrb/raw` にある (生成物。境界の
 関数 1 つに Go の関数 1 つ。例 `raw.GfxFillArc`)。
 
@@ -460,12 +460,14 @@ comptime {
 ### C
 
 SDK はリポジトリの `c/` にある 2 つのヘッダ、`fmrb_boundary.h` (すべての関数・レコード・フック) と
-`fmrb_sdk_version.h`。プロジェクトにコピーするか、リポジトリを git の submodule にする:
+`fmrb_sdk_version.h` で、使うなら 3 つ目の `fmrb.h` (後述) を足す。プロジェクトにコピーするか、リポジトリを
+git の submodule にする:
 
 ```
 mkdir hello && cd hello
 curl -O https://raw.githubusercontent.com/family-mruby/family-mruby-sdk/main/c/fmrb_boundary.h
 curl -O https://raw.githubusercontent.com/family-mruby/family-mruby-sdk/main/c/fmrb_sdk_version.h
+curl -O https://raw.githubusercontent.com/family-mruby/family-mruby-sdk/main/c/fmrb.h   # 使うなら
 ```
 
 C のアプリは両方を include して C の関数を直接呼び (`fmrb_gfx_fill_rect(0, x, y, w, h, color)`。描画先 0 が
@@ -488,8 +490,14 @@ clang --target=wasm32 -nostdlib -Os -I. -Wl,--no-entry -Wl,-z,stack-size=16384 -
 ```
 
 libc は無く (`-nostdlib`)、エントリポイントも無い (フックを呼ぶのはファームウェア)。コンパイラが `memcpy`・`memset`
-を求めたら自分で定義する (`c/examples/tour/app.c` がそうしている)。文字列はポインタと長さで渡し、NUL 終端では
-ない。ファイルが増えたら小さな Makefile で (SDK の `c/examples/hello/Makefile` と同じ形。`FMRB_SDK` はヘッダの
+を求めたら自分で定義する。文字列はポインタと長さで渡し、NUL 終端ではない。
+
+`fmrb.h` は手書きの C の層で、ほかの言語の薄い層に当たる (残りの 2 つを include する)。`FMRB_APP_SETUP();` の
+1 行が上の 2 行と `memcpy`・`memset` の代わりになる。C の文字列を受け取る関数 (名前の終わりが `_s`。
+`fmrb_draw_text_s(FMRB_WINDOW, x, y, "hi", color, bg)`・`fmrb_file_write_s`・`fmrb_log_info_s`・
+`fmrb_app_name_s(buf, size)` など)、行を組み立てるテキストバッファ (`fmrb_text_t` と `fmrb_put`・`fmrb_put_int`
+など)、`FMRB_WINDOW`・`FMRB_AUDIO`・`FMRB_RGB`、イベントのレコード用の `fmrb_event_char` がある。関数は static
+なので、呼ばないものはサイズに入らない。`c/examples/tour/app.c` がこれを使っている。ファイルが増えたら小さな Makefile で (SDK の `c/examples/hello/Makefile` と同じ形。`FMRB_SDK` はヘッダの
 場所で、submodule なら `family-mruby-sdk/c` など。SDK の中のものは `../..`):
 
 ```make
