@@ -329,6 +329,38 @@ pub mod app {
     pub fn theme_fg() -> i32 {
         unsafe { raw::app_theme_fg() }
     }
+    /// The text on the clipboard (one for every app; empty when empty), at
+    /// most limit bytes (0: all of it, as much as fits) and never cut
+    /// inside a character.
+    pub fn clipboard<const N: usize>(limit: i32) -> Text<N> {
+        read_text(|p, n| unsafe { raw::app_clipboard_raw(limit, p, n) })
+    }
+    /// Puts text on the clipboard (false over 64 KB).
+    pub fn set_clipboard(text: &str) -> bool {
+        let (p, n) = super::ptr(text);
+        unsafe { raw::app_set_clipboard(p, n) == 1 }
+    }
+    /// Counts the clipboard's changes (to see one without reading it).
+    pub fn clipboard_gen() -> i32 {
+        unsafe { raw::app_clipboard_gen() }
+    }
+    /// How a wasm app (by pid) is doing: its memory in 64 KB pages, its
+    /// .wasm's size, its hook calls and how long they took; None when pid
+    /// is not a wasm app.
+    pub fn wasm_app_stats(pid: i32) -> Option<raw::AppWasmAppStats> {
+        let mut s = raw::AppWasmAppStats::default();
+        (unsafe { raw::app_wasm_app_stats(pid, &mut s) } == 1).then_some(s)
+    }
+    /// The wasm runtime as a whole (apps running, its memory pool).
+    pub fn wasm_stats() -> Option<raw::AppWasmStats> {
+        let mut s = raw::AppWasmStats::default();
+        (unsafe { raw::app_wasm_stats(&mut s) } == 1).then_some(s)
+    }
+    /// The tally of drawing commands and frames sent.
+    pub fn gfx_stats() -> Option<raw::AppGfxStats> {
+        let mut s = raw::AppGfxStats::default();
+        (unsafe { raw::app_gfx_stats(&mut s) } == 1).then_some(s)
+    }
     /// Ends the app after the hook it is called from returns.
     pub fn stop() {
         unsafe { raw::app_stop() };
@@ -383,12 +415,46 @@ impl Audio {
     pub fn note_off(self, channel: i32) {
         unsafe { raw::audio_note_off(self.0, channel) };
     }
+    /// Reads an FMSQ tune file into a slot; the path is on the graphics
+    /// side (send it there with [`Gfx::sync_file`] first).
+    pub fn load_fmsq_file(self, slot: i32, path: &str) -> bool {
+        let (p, n) = ptr(path);
+        unsafe { raw::audio_load_fmsq_file(self.0, slot, p, n) >= 0 }
+    }
+    /// Plays the tune in a slot on an instance ([`AUDIO_MAIN`] or
+    /// [`AUDIO_SUB`]).
+    pub fn play_slot(self, slot: i32, instance: i32) {
+        unsafe { raw::audio_play_slot_raw(self.0, slot, instance) };
+    }
+    /// Stops the tune (an NSF or an FMSQ), whichever is playing.
+    pub fn stop(self) {
+        unsafe { raw::audio_stop(self.0) };
+    }
+    /// Sets the volume of the tune on MAIN only, 0-100 (%).
+    pub fn set_main_volume(self, percent: i32) {
+        unsafe { raw::audio_set_main_volume(self.0, percent) };
+    }
+    /// Plays a WAV file (mono, 16-bit PCM or IMA-ADPCM) over the APU: 1 when
+    /// it plays, 0 where it cannot (Retro), below 0 on an error.
+    pub fn play_wav(self, path: &str) -> i32 {
+        let (p, n) = ptr(path);
+        unsafe { raw::audio_play_wav(self.0, p, n) }
+    }
+    /// Stops the WAV that is playing.
+    pub fn stop_wav(self) {
+        unsafe { raw::audio_stop_wav(self.0) };
+    }
 }
+
+/// The two APU instances that play a tune (play_slot's instance): a long
+/// tune on MAIN and short effects on SUB, so an effect never cuts the tune.
+pub const AUDIO_MAIN: i32 = 0;
+pub const AUDIO_SUB: i32 = 1;
 
 // ---- FmrbFile (by path; the places a Ruby app's File may read and write)
 
 pub mod file {
-    use super::{ptr, raw};
+    use super::{ptr, raw, read_text, Text};
 
     /// Reads a file into buf; the bytes read (at most buf.len()), None when
     /// there is no such file.
@@ -419,6 +485,33 @@ pub mod file {
     pub fn delete(path: &str) -> bool {
         let (p, n) = ptr(path);
         unsafe { raw::file_delete(p, n) == 1 }
+    }
+    /// Adds data at the end of a file (making it when there is none).
+    pub fn append(path: &str, data: &[u8]) -> bool {
+        let (p, n) = ptr(path);
+        unsafe { raw::file_append(p, n, data.as_ptr(), data.len() as i32) == 1 }
+    }
+    /// Makes a directory.
+    pub fn mkdir(path: &str) -> bool {
+        let (p, n) = ptr(path);
+        unsafe { raw::file_mkdir(p, n) == 1 }
+    }
+    /// The free space of the file system path is on; None when it cannot
+    /// be told.
+    pub fn free_bytes(path: &str) -> Option<i64> {
+        let (p, n) = ptr(path);
+        let s = unsafe { raw::file_free_bytes(p, n) };
+        (s >= 0).then_some(s)
+    }
+    /// The names in a directory, one per line (a directory's with a "/"
+    /// after it), into a Text; None when it cannot be read.
+    /// `as_str().lines()` takes them apart.
+    pub fn list<const N: usize>(dir: &str) -> Option<Text<N>> {
+        let (p, n) = ptr(dir);
+        if unsafe { raw::file_list_raw(p, n, core::ptr::null_mut(), 0) } < 0 {
+            return None;
+        }
+        Some(read_text(|o, on| unsafe { raw::file_list_raw(p, n, o, on) }))
     }
 }
 
@@ -451,6 +544,21 @@ pub struct Image {
     pub width: i32,
     pub height: i32,
 }
+
+/// A picture on the graphics side that sprites show and tiles are cut from
+/// (SpriteImage in Ruby).
+#[derive(Clone, Copy, Default)]
+pub struct SpriteImage {
+    pub id: i32,
+    pub width: i32,
+    pub height: i32,
+}
+
+/// A placed sprite (SpriteInstance in Ruby): one or more sprite images (the
+/// frames of a flip book) at a position, drawn over the canvas at each
+/// present.
+#[derive(Clone, Copy, Default)]
+pub struct Sprite(pub i32);
 
 impl Gfx {
     pub fn area_width(self) -> i32 {
@@ -552,6 +660,81 @@ impl Gfx {
     pub fn delete_image(self, img: &Image) {
         unsafe { raw::gfx_delete_image(self.0, img.id) };
     }
+    /// Draws the time now at (x, y), formatted by the firmware; false when
+    /// the device does not know it.
+    pub fn draw_wallclock(self, x: i32, y: i32, color: i32, bg: i32) -> bool {
+        unsafe { raw::gfx_draw_wallclock(self.0, x, y, color, bg) == 1 }
+    }
+
+    // ---- sprites and tiles
+
+    /// Makes a width x height sprite image; with use_key the pixels of key
+    /// are see-through. None when it cannot be made.
+    pub fn new_sprite_image(self, width: i32, height: i32, key: i32, use_key: bool) -> Option<SpriteImage> {
+        let id = unsafe { raw::gfx_create_sprite_image(self.0, width, height, key, use_key as i32) };
+        (id > 0).then_some(SpriteImage { id, width, height })
+    }
+    /// Reads a PNG (or an RGB332 BMP) into a sprite image; the path is on
+    /// the graphics side (send it there with [`Gfx::sync_file`] first).
+    pub fn load_sprite_image(self, img: &SpriteImage, path: &str) -> bool {
+        let (p, n) = ptr(path);
+        unsafe { raw::gfx_load_sprite_image(self.0, img.id, p, n) >= 0 }
+    }
+    /// What is drawn next goes into img, in its own coordinates; None goes
+    /// back to the canvas.
+    pub fn draw_into(self, img: Option<&SpriteImage>) {
+        unsafe { raw::gfx_set_sprite_image_target(self.0, img.map_or(0, |i| i.id)) };
+    }
+    pub fn delete_sprite_image(self, img: &SpriteImage) {
+        unsafe { raw::gfx_delete_sprite_image(self.0, img.id) };
+    }
+    /// Places sprite images (1 to 8 frames) at (x, y) of the area; a larger
+    /// z is nearer. None when it cannot be placed.
+    pub fn new_sprite(self, frames: &[SpriteImage], x: i32, y: i32, z: i32) -> Option<Sprite> {
+        if frames.is_empty() || frames.len() > 8 {
+            return None;
+        }
+        let mut ids = [0u16; 8];
+        for (i, f) in frames.iter().enumerate() {
+            ids[i] = f.id as u16;
+        }
+        let id = unsafe { raw::gfx_create_sprite_instance(self.0, ids.as_ptr(), frames.len() as i32, x, y, z) };
+        (id > 0).then_some(Sprite(id))
+    }
+    /// Moves a placed sprite (shown at the next present).
+    pub fn move_sprite(self, s: Sprite, x: i32, y: i32) {
+        unsafe { raw::gfx_move_sprite(self.0, s.0, x, y) };
+    }
+    pub fn set_sprite_visible(self, s: Sprite, visible: bool) {
+        unsafe { raw::gfx_set_sprite_visible(self.0, s.0, visible as i32) };
+    }
+    /// Which frame a placed sprite shows (0: the first).
+    pub fn set_sprite_frame(self, s: Sprite, frame: i32) {
+        unsafe { raw::gfx_set_sprite_frame(self.0, s.0, frame) };
+    }
+    pub fn delete_sprite(self, s: Sprite) {
+        unsafe { raw::gfx_delete_sprite_instance(self.0, s.0) };
+    }
+    /// Lets go of every placed sprite and sprite image of the drawer's
+    /// canvas.
+    pub fn delete_all_sprites(self) {
+        unsafe { raw::gfx_delete_all_sprites(self.0) };
+    }
+    /// Keeps sprites inside a rectangle of the area (a window's sprites
+    /// start clipped to its area).
+    pub fn set_sprite_clip(self, x: i32, y: i32, w: i32, h: i32) {
+        unsafe { raw::gfx_set_sprite_clip(self.0, x, y, w, h) };
+    }
+    pub fn clear_sprite_clip(self) {
+        unsafe { raw::gfx_clear_sprite_clip(self.0) };
+    }
+    /// Draws the w x h piece of sheet at (sx, sy) to (x, y), into the
+    /// canvas (its see-through pixels leave what is there).
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_tile(self, sheet: &SpriteImage, sx: i32, sy: i32, w: i32, h: i32, x: i32, y: i32) {
+        unsafe { raw::gfx_draw_tile_raw(self.0, sheet.id, sx, sy, w, h, x, y) };
+    }
+
     /// Shows what was drawn, at the window's place.
     pub fn present(self) {
         unsafe { raw::gfx_present_raw(self.0, 0, 0, 0) };

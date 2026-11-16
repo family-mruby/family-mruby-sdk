@@ -172,6 +172,37 @@ pub const app = struct {
     pub fn themeFg() i32 {
         return raw.app_theme_fg();
     }
+    /// The text on the clipboard (one for every app; empty when empty),
+    /// written into buf: at most limit bytes (0: all of it, as much as
+    /// fits), never cut inside a character.
+    pub fn clipboard(buf: []u8, limit: i32) []const u8 {
+        return readString(buf, raw.app_clipboard_raw(limit, buf.ptr, len(buf)));
+    }
+    /// Puts text on the clipboard (false over 64 KB).
+    pub fn setClipboard(text: []const u8) bool {
+        return raw.app_set_clipboard(text.ptr, len(text)) == 1;
+    }
+    /// Counts the clipboard's changes (to see one without reading it).
+    pub fn clipboardGen() i32 {
+        return raw.app_clipboard_gen();
+    }
+    /// How a wasm app (by pid) is doing: its memory in 64 KB pages, its
+    /// .wasm's size, its hook calls and how long they took; null when pid
+    /// is not a wasm app.
+    pub fn wasmAppStats(app_pid: i32) ?raw.AppWasmAppStats {
+        var s: raw.AppWasmAppStats = .{};
+        return if (raw.app_wasm_app_stats(app_pid, &s) == 1) s else null;
+    }
+    /// The wasm runtime as a whole (apps running, its memory pool).
+    pub fn wasmStats() ?raw.AppWasmStats {
+        var s: raw.AppWasmStats = .{};
+        return if (raw.app_wasm_stats(&s) == 1) s else null;
+    }
+    /// The tally of drawing commands and frames sent.
+    pub fn gfxStats() ?raw.AppGfxStats {
+        var s: raw.AppGfxStats = .{};
+        return if (raw.app_gfx_stats(&s) == 1) s else null;
+    }
     /// Ends the app after the hook it is called from returns.
     pub fn stop() void {
         _ = raw.app_stop();
@@ -219,6 +250,38 @@ pub const Audio = struct {
     pub fn noteOff(self: Audio, channel: i32) void {
         _ = raw.audio_note_off(self.id, channel);
     }
+    /// Reads an FMSQ tune file into a slot; the path is on the graphics
+    /// side (send it there with Gfx.syncFile first).
+    pub fn loadFmsqFile(self: Audio, slot: i32, path: []const u8) bool {
+        return raw.audio_load_fmsq_file(self.id, slot, path.ptr, len(path)) >= 0;
+    }
+    /// Plays the tune in a slot on an instance (Audio.main or Audio.sub).
+    pub fn playSlot(self: Audio, slot: i32, instance: i32) void {
+        _ = raw.audio_play_slot_raw(self.id, slot, instance);
+    }
+    /// Stops the tune (an NSF or an FMSQ), whichever is playing.
+    pub fn stop(self: Audio) void {
+        _ = raw.audio_stop(self.id);
+    }
+    /// Sets the volume of the tune on MAIN only, 0-100 (%).
+    pub fn setMainVolume(self: Audio, percent: i32) void {
+        _ = raw.audio_set_main_volume(self.id, percent);
+    }
+    /// Plays a WAV file (mono, 16-bit PCM or IMA-ADPCM) over the APU: 1 when
+    /// it plays, 0 where it cannot (Retro), below 0 on an error.
+    pub fn playWav(self: Audio, path: []const u8) i32 {
+        return raw.audio_play_wav(self.id, path.ptr, len(path));
+    }
+    /// Stops the WAV that is playing.
+    pub fn stopWav(self: Audio) void {
+        _ = raw.audio_stop_wav(self.id);
+    }
+
+    /// The two APU instances that play a tune (playSlot's instance): a long
+    /// tune on main and short effects on sub, so an effect never cuts the
+    /// tune.
+    pub const main: i32 = 0;
+    pub const sub: i32 = 1;
 };
 
 /// The app's sound.
@@ -250,6 +313,28 @@ pub const file = struct {
     pub fn delete(path: []const u8) bool {
         return raw.file_delete(path.ptr, len(path)) == 1;
     }
+    /// Adds data at the end of a file (making it when there is none).
+    pub fn append(path: []const u8, data: []const u8) bool {
+        return raw.file_append(path.ptr, len(path), data.ptr, len(data)) == 1;
+    }
+    /// Makes a directory.
+    pub fn mkdir(path: []const u8) bool {
+        return raw.file_mkdir(path.ptr, len(path)) == 1;
+    }
+    /// The free space of the file system path is on; null when it cannot
+    /// be told.
+    pub fn freeBytes(path: []const u8) ?i64 {
+        const n = raw.file_free_bytes(path.ptr, len(path));
+        return if (n >= 0) n else null;
+    }
+    /// The names in a directory, one per line (a directory's with a "/"
+    /// after it), written into buf; null when it cannot be read.
+    /// std.mem.tokenizeScalar(u8, names, '\n') takes them apart.
+    pub fn list(dir: []const u8, buf: []u8) ?[]const u8 {
+        const n = raw.file_list_raw(dir.ptr, len(dir), buf.ptr, len(buf));
+        if (n < 0) return null;
+        return readString(buf, n);
+    }
 };
 
 // ---- FmrbGfx
@@ -269,6 +354,15 @@ pub fn rgb(r: i32, g: i32, b: i32) i32 {
 
 /// A picture the graphics side decoded (FmrbGfx#create_image).
 pub const Image = struct { id: i32, width: i32, height: i32 };
+
+/// A picture on the graphics side that sprites show and tiles are cut from
+/// (SpriteImage in Ruby).
+pub const SpriteImage = struct { id: i32, width: i32, height: i32 };
+
+/// A placed sprite (SpriteInstance in Ruby): one or more sprite images (the
+/// frames of a flip book) at a position, drawn over the canvas at each
+/// present.
+pub const Sprite = struct { id: i32 };
 
 /// A drawer: a canvas, a drawing origin and an area.
 pub const Gfx = struct {
@@ -360,6 +454,75 @@ pub const Gfx = struct {
     pub fn deleteImage(g: Gfx, img: Image) void {
         _ = raw.gfx_delete_image(g.id, img.id);
     }
+    /// Draws the time now at (x, y), formatted by the firmware; false when
+    /// the device does not know it.
+    pub fn drawWallclock(g: Gfx, x: i32, y: i32, color: i32, bg: i32) bool {
+        return raw.gfx_draw_wallclock(g.id, x, y, color, bg) == 1;
+    }
+
+    // ---- sprites and tiles
+
+    /// Makes a width x height sprite image; with use_key the pixels of key
+    /// are see-through. null when it cannot be made.
+    pub fn newSpriteImage(g: Gfx, width: i32, height: i32, key: i32, use_key: bool) ?SpriteImage {
+        const id = raw.gfx_create_sprite_image(g.id, width, height, key, @intFromBool(use_key));
+        return if (id > 0) .{ .id = id, .width = width, .height = height } else null;
+    }
+    /// Reads a PNG (or an RGB332 BMP) into a sprite image; the path is on
+    /// the graphics side (send it there with syncFile first).
+    pub fn loadSpriteImage(g: Gfx, img: SpriteImage, path: []const u8) bool {
+        return raw.gfx_load_sprite_image(g.id, img.id, path.ptr, len(path)) >= 0;
+    }
+    /// What is drawn next goes into img, in its own coordinates; null goes
+    /// back to the canvas.
+    pub fn drawInto(g: Gfx, img: ?SpriteImage) void {
+        _ = raw.gfx_set_sprite_image_target(g.id, if (img) |i| i.id else 0);
+    }
+    pub fn deleteSpriteImage(g: Gfx, img: SpriteImage) void {
+        _ = raw.gfx_delete_sprite_image(g.id, img.id);
+    }
+    /// Places sprite images (1 to 8 frames) at (x, y) of the area; a larger
+    /// z is nearer. null when it cannot be placed.
+    pub fn newSprite(g: Gfx, frames: []const SpriteImage, x: i32, y: i32, z: i32) ?Sprite {
+        if (frames.len == 0 or frames.len > 8) return null;
+        var ids: [8]u16 = undefined;
+        for (frames, 0..) |f, i| ids[i] = @intCast(f.id);
+        const id = raw.gfx_create_sprite_instance(g.id, &ids, @intCast(frames.len), x, y, z);
+        return if (id > 0) .{ .id = id } else null;
+    }
+    /// Moves a placed sprite (shown at the next present).
+    pub fn moveSprite(g: Gfx, s: Sprite, x: i32, y: i32) void {
+        _ = raw.gfx_move_sprite(g.id, s.id, x, y);
+    }
+    pub fn setSpriteVisible(g: Gfx, s: Sprite, visible: bool) void {
+        _ = raw.gfx_set_sprite_visible(g.id, s.id, @intFromBool(visible));
+    }
+    /// Which frame a placed sprite shows (0: the first).
+    pub fn setSpriteFrame(g: Gfx, s: Sprite, frame: i32) void {
+        _ = raw.gfx_set_sprite_frame(g.id, s.id, frame);
+    }
+    pub fn deleteSprite(g: Gfx, s: Sprite) void {
+        _ = raw.gfx_delete_sprite_instance(g.id, s.id);
+    }
+    /// Lets go of every placed sprite and sprite image of the drawer's
+    /// canvas.
+    pub fn deleteAllSprites(g: Gfx) void {
+        _ = raw.gfx_delete_all_sprites(g.id);
+    }
+    /// Keeps sprites inside a rectangle of the area (a window's sprites
+    /// start clipped to its area).
+    pub fn setSpriteClip(g: Gfx, x: i32, y: i32, w: i32, h: i32) void {
+        _ = raw.gfx_set_sprite_clip(g.id, x, y, w, h);
+    }
+    pub fn clearSpriteClip(g: Gfx) void {
+        _ = raw.gfx_clear_sprite_clip(g.id);
+    }
+    /// Draws the w x h piece of sheet at (sx, sy) to (x, y), into the
+    /// canvas (its see-through pixels leave what is there).
+    pub fn drawTile(g: Gfx, sheet: SpriteImage, sx: i32, sy: i32, w: i32, h: i32, x: i32, y: i32) void {
+        _ = raw.gfx_draw_tile_raw(g.id, sheet.id, sx, sy, w, h, x, y);
+    }
+
     /// Shows what was drawn, at the window's place.
     pub fn present(g: Gfx) void {
         _ = raw.gfx_present_raw(g.id, 0, 0, 0);

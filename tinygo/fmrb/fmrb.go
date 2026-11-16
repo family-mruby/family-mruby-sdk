@@ -230,6 +230,39 @@ func MemoryFree() uint32 {
 	return r.Free
 }
 
+// Clipboard is the text on the clipboard (one for every app; "" when
+// empty), at most limit bytes (0: all of it) and never cut inside a
+// character.
+func Clipboard(limit int32) string {
+	return readString(func(out unsafe.Pointer, size int32) int32 { return raw.AppClipboardRaw(limit, out, size) })
+}
+
+// SetClipboard puts text on the clipboard (false over 64 KB).
+func SetClipboard(text string) bool { p, n := strPtr(text); return raw.AppSetClipboard(p, n) == 1 }
+
+// ClipboardGen counts the clipboard's changes (to see one without reading it).
+func ClipboardGen() int32 { return raw.AppClipboardGen() }
+
+// WasmAppStats is how a wasm app (by pid) is doing: its memory in 64 KB
+// pages, its .wasm's size, its hook calls and how long they took; ok is
+// false when pid is not a wasm app.
+func WasmAppStats(pid int32) (s raw.AppWasmAppStatsRecord, ok bool) {
+	ok = raw.AppWasmAppStats(pid, unsafe.Pointer(&s)) == 1
+	return s, ok
+}
+
+// WasmStats is the wasm runtime as a whole (apps running, its memory pool).
+func WasmStats() (s raw.AppWasmStatsRecord, ok bool) {
+	ok = raw.AppWasmStats(unsafe.Pointer(&s)) == 1
+	return s, ok
+}
+
+// GfxStats is the tally of drawing commands and frames sent.
+func GfxStats() (s raw.AppGfxStatsRecord, ok bool) {
+	ok = raw.AppGfxStats(unsafe.Pointer(&s)) == 1
+	return s, ok
+}
+
 // Stop ends the app after the hook it is called from returns.
 func (AppT) Stop() { raw.AppStop() }
 
@@ -257,6 +290,39 @@ func (a Audio) NoteOnRaw(channel, freq, volume, duty, sweep int32) {
 }
 
 func (a Audio) NoteOff(channel int32) { raw.AudioNoteOff(int32(a), channel) }
+
+// The two APU instances that play a tune (play_slot's instance): a long
+// tune on MAIN and short effects on SUB, so an effect never cuts the tune.
+const (
+	AudioMain int32 = 0
+	AudioSub  int32 = 1
+)
+
+// LoadFmsqFile reads an FMSQ tune file into a slot; the path is on the
+// graphics side (send it there with Window.SyncFile first).
+func (a Audio) LoadFmsqFile(slot int32, path string) bool {
+	p, n := strPtr(path)
+	return raw.AudioLoadFmsqFile(int32(a), slot, p, n) >= 0
+}
+
+// PlaySlot plays the tune in a slot on an instance (AudioMain or AudioSub).
+func (a Audio) PlaySlot(slot, instance int32) { raw.AudioPlaySlotRaw(int32(a), slot, instance) }
+
+// Stop stops the tune (an NSF or an FMSQ), whichever is playing.
+func (a Audio) Stop() { raw.AudioStop(int32(a)) }
+
+// SetMainVolume sets the volume of the tune on MAIN only, 0-100 (%).
+func (a Audio) SetMainVolume(percent int32) { raw.AudioSetMainVolume(int32(a), percent) }
+
+// PlayWav plays a WAV file (mono, 16-bit PCM or IMA-ADPCM) over the APU: 1
+// when it plays, 0 where it cannot (Retro), below 0 on an error.
+func (a Audio) PlayWav(path string) int32 {
+	p, n := strPtr(path)
+	return raw.AudioPlayWav(int32(a), p, n)
+}
+
+// StopWav stops the WAV that is playing.
+func (a Audio) StopWav() { raw.AudioStopWav(int32(a)) }
 
 // ---- FmrbFile (by path; the places a Ruby app's File may read and write)
 
@@ -302,6 +368,27 @@ func FileSize(path string) (size int64, ok bool) {
 
 // FileDelete deletes a file or an empty directory.
 func FileDelete(path string) bool { p, n := strPtr(path); return raw.FileDelete(p, n) == 1 }
+
+// FileAppend adds data at the end of a file (making it when there is none).
+func FileAppend(path string, data []byte) bool {
+	p, n := strPtr(path)
+	var d unsafe.Pointer
+	if len(data) > 0 {
+		d = unsafe.Pointer(&data[0])
+	}
+	return raw.FileAppend(p, n, d, int32(len(data))) == 1
+}
+
+// FileMkdir makes a directory.
+func FileMkdir(path string) bool { p, n := strPtr(path); return raw.FileMkdir(p, n) == 1 }
+
+// FileFreeBytes is the free space of the file system path is on; ok is
+// false when it cannot be told.
+func FileFreeBytes(path string) (n int64, ok bool) {
+	p, pn := strPtr(path)
+	n = raw.FileFreeBytes(p, pn)
+	return n, n >= 0
+}
 
 // FileList is the names in a directory (a directory's with a "/" after it);
 // ok is false when it cannot be read.
@@ -426,6 +513,92 @@ func (g Gfx) DrawImage(img Image, x, y int32, scale float64) {
 }
 
 func (g Gfx) DeleteImage(img Image) { raw.GfxDeleteImage(int32(g), img.ID) }
+
+// DrawWallclock draws the time now at (x, y), formatted by the firmware;
+// false when the device does not know it.
+func (g Gfx) DrawWallclock(x, y, color, bg int32) bool {
+	return raw.GfxDrawWallclock(int32(g), x, y, color, bg) == 1
+}
+
+// ---- sprites (SpriteImage and SpriteInstance in Ruby) and tiles
+
+// SpriteImage is a picture on the graphics side that sprites show and
+// tiles are cut from.
+type SpriteImage struct{ ID, Width, Height int32 }
+
+// Sprite is a placed sprite: one or more SpriteImages (the frames of a
+// flip book) at a position. It is drawn over the canvas at each Present.
+type Sprite int32
+
+// NewSpriteImage makes a width x height sprite image; with useKey the
+// pixels of key are see-through. ok is false when it cannot be made.
+func (g Gfx) NewSpriteImage(width, height, key int32, useKey bool) (img SpriteImage, ok bool) {
+	k := int32(0)
+	if useKey {
+		k = 1
+	}
+	id := raw.GfxCreateSpriteImage(int32(g), width, height, key, k)
+	return SpriteImage{id, width, height}, id > 0
+}
+
+// LoadSpriteImage reads a PNG (or an RGB332 BMP) into a sprite image; the
+// path is on the graphics side (send it there with SyncFile first).
+func (g Gfx) LoadSpriteImage(img SpriteImage, path string) bool {
+	p, n := strPtr(path)
+	return raw.GfxLoadSpriteImage(int32(g), img.ID, p, n) >= 0
+}
+
+// DrawInto makes what is drawn next go into img, in its own coordinates;
+// DrawInto with a zero SpriteImage goes back to the canvas.
+func (g Gfx) DrawInto(img SpriteImage) { raw.GfxSetSpriteImageTarget(int32(g), img.ID) }
+
+func (g Gfx) DeleteSpriteImage(img SpriteImage) { raw.GfxDeleteSpriteImage(int32(g), img.ID) }
+
+// NewSprite places sprite images (1 to 8 frames) at (x, y) of the area; a
+// larger z is nearer. ok is false when it cannot be placed.
+func (g Gfx) NewSprite(frames []SpriteImage, x, y, z int32) (s Sprite, ok bool) {
+	var ids [8]uint16
+	n := len(frames)
+	if n == 0 || n > len(ids) {
+		return 0, false
+	}
+	for i, f := range frames {
+		ids[i] = uint16(f.ID)
+	}
+	id := raw.GfxCreateSpriteInstance(int32(g), unsafe.Pointer(&ids[0]), int32(n), x, y, z)
+	return Sprite(id), id > 0
+}
+
+// MoveSprite moves a placed sprite (shown at the next Present).
+func (g Gfx) MoveSprite(s Sprite, x, y int32) { raw.GfxMoveSprite(int32(g), int32(s), x, y) }
+
+func (g Gfx) SetSpriteVisible(s Sprite, visible bool) {
+	v := int32(0)
+	if visible {
+		v = 1
+	}
+	raw.GfxSetSpriteVisible(int32(g), int32(s), v)
+}
+
+// SetSpriteFrame picks which frame a placed sprite shows (0: the first).
+func (g Gfx) SetSpriteFrame(s Sprite, frame int32) { raw.GfxSetSpriteFrame(int32(g), int32(s), frame) }
+
+func (g Gfx) DeleteSprite(s Sprite) { raw.GfxDeleteSpriteInstance(int32(g), int32(s)) }
+
+// DeleteAllSprites lets go of every placed sprite and sprite image of the
+// drawer's canvas.
+func (g Gfx) DeleteAllSprites() { raw.GfxDeleteAllSprites(int32(g)) }
+
+// SetSpriteClip keeps sprites inside a rectangle of the area (a window's
+// sprites start clipped to its area).
+func (g Gfx) SetSpriteClip(x, y, w, h int32) { raw.GfxSetSpriteClip(int32(g), x, y, w, h) }
+func (g Gfx) ClearSpriteClip()               { raw.GfxClearSpriteClip(int32(g)) }
+
+// DrawTile draws the w x h piece of sheet at (sx, sy) to (x, y), into the
+// canvas (its see-through pixels leave what is there).
+func (g Gfx) DrawTile(sheet SpriteImage, sx, sy, w, h, x, y int32) {
+	raw.GfxDrawTileRaw(int32(g), sheet.ID, sx, sy, w, h, x, y)
+}
 
 // Present shows what was drawn, at the window's place.
 func (g Gfx) Present() { raw.GfxPresentRaw(int32(g), 0, 0, 0) }
