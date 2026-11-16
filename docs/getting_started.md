@@ -64,9 +64,10 @@ And:
 - For the simulation: a Family mruby development tree (the `family-mruby`
   repository with `fmruby-core` and `fmruby-graphics-audio` fetched into it)
   and Docker. See that repository's README ("Testing Without Hardware").
-- For a board: an ESP32-P4 board running a **development build** of the
-  firmware with WiFi set up (fmruby-core's `config/wifi.toml.example`), and
-  `curl`.
+- For a board: an ESP32-P4 board with WiFi set up (fmruby-core's
+  `config/wifi.toml.example`) and `curl`. A development build of the
+  firmware works as it is; a release build needs the PC paired once (see
+  "(b) On an ESP32-P4 board over WiFi").
 
 Check the TinyGo toolchain with:
 
@@ -637,11 +638,62 @@ ruby tools/fmrb_rd_fs.rb <device-ip> put hello.app.wasm /app/mine/hello.app.wasm
 ruby tools/fmrb_rd_launch.rb <device-ip> /app/mine/hello.app.wasm
 ```
 
-The remote control is unauthenticated and only in development builds: use it
-on a network you trust. **Release builds** do not have it today; the plan is
-that a release build will open it only after you allow it on the device itself
-(a setting and a short code shown on the screen), so that the same put and
-launch steps work there too. This guide will be updated when that is in.
+In a **development build** the remote control is unauthenticated: anyone on
+the network can use it, so use it on a network you trust. Nothing below
+applies to it.
+
+#### On a release build: allow the PC once
+
+A **release build** answers only PCs you have allowed on the board itself.
+Once per board:
+
+1. On the board, open Config, go to the **System** tab and step the
+   **Remote control** row with the arrow keys. Its values go
+   `OFF` -> `ON` -> `Pair 123456` -> `Forget N PC` -> `OFF`. It is `OFF`
+   at first; `ON` takes effect at once and stays on across restarts. The row
+   is there only when WiFi is up.
+2. Step it to `Pair` with a six-digit number. New PCs are taken only while
+   the row shows that number (leaving the row or closing Config stops it).
+3. On the PC, send the number and keep the token it answers with:
+
+   ```
+   curl -X POST "http://<device-ip>/pair?code=<number>"
+   # {"ok":true,"token":"<token>"}
+   ```
+
+   The number changes after each PC pairs. The board keeps up to four PCs
+   (a fifth pushes out the oldest).
+4. Send the token with **every** request, as the `X-Fmrb-Token` header:
+
+   ```
+   TOKEN=<token>
+   curl -H "X-Fmrb-Token: $TOKEN" "http://<device-ip>/auth"     # 200: you are let in
+   curl -H "X-Fmrb-Token: $TOKEN" -T hello.app.wasm "http://<device-ip>/fs/put?path=/app/mine/hello.app.wasm"
+   curl -H "X-Fmrb-Token: $TOKEN" -X POST "http://<device-ip>/app/launch?path=/app/mine/hello.app.wasm"
+   ```
+
+The token keeps working after a restart: a paired PC only needs the row to be
+`ON`. Turning it `OFF` shuts the remote control at once (open connections
+are cut). To forget all PCs, step the row to `Forget N PC` and press Save;
+pair again afterwards. The Ruby tools above do the same: run
+`ruby tools/fmrb_rd_fs.rb <device-ip> pair <number>` once and they send the
+token for you.
+
+A release build writes (`/fs/put`, `/fs/mkdir`, `/fs/del`) only under
+`/home`, `/app` and `/mnt/sd`; `/app/mine/...` is fine.
+
+The `guard` field of the JSON answer gives the reason
+(`{"ok":false,"guard":"closed",...}`).
+
+| Answer | Meaning | What to do |
+|---|---|---|
+| 401 `closed` | Remote control is `OFF` | set it to `ON` on the board |
+| 401 `no_token` / `bad_token` | no token, or one the board does not know (forgotten, pushed out) | pair this PC |
+| 403 `closed` (from `/pair`) | Remote control is `OFF` | set it to `ON`, then `Pair` |
+| 403 `not_pairing` | the row is not showing `Pair` with a number | step the row to `Pair` |
+| 403 `wrong` | wrong number (the answer says how many tries are left) | check the number on the screen |
+| 403 `locked` | five wrong numbers | step away from the row and back (or reopen Config): a new number |
+| 403 on a write | the path is outside `/home`, `/app` and `/mnt/sd` | put the app under `/app` |
 
 The log of a board is on its serial line (fmruby-core's `rake monitor` or any
 serial monitor); it is not sent over WiFi.

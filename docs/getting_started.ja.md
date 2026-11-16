@@ -53,8 +53,8 @@ WebAssembly (`.app.wasm`) にコンパイルし、端末ではファームウェ
 - **git** (Go・Cargo・Zig が SDK を git のリポジトリから取ってくる)。
 - sim で動かすなら: Family mruby の開発用のツリー (`family-mruby` のリポジトリに `fmruby-core` と
   `fmruby-graphics-audio` を取ってきたもの) と Docker。そのリポジトリの README の「Testing Without Hardware」を参照。
-- ボードで動かすなら: ファームウェアの**開発用ビルド**が入り、WiFi を設定した ESP32-P4 のボード
-  (fmruby-core の `config/wifi.toml.example`) と `curl`。
+- ボードで動かすなら: WiFi を設定した ESP32-P4 のボード (fmruby-core の `config/wifi.toml.example`) と `curl`。
+  ファームウェアは開発用ビルドか、リリースビルドなら PC を一度登録する (下の「(b) ESP32-P4 のボードで WiFi 経由で動かす」)。
 
 TinyGo のツールチェーンの確認:
 
@@ -571,10 +571,55 @@ ruby tools/fmrb_rd_fs.rb <device-ip> put hello.app.wasm /app/mine/hello.app.wasm
 ruby tools/fmrb_rd_launch.rb <device-ip> /app/mine/hello.app.wasm
 ```
 
-このリモート操作は認証が無く、開発用ビルドにだけ入っている。信頼できるネットワークでだけ使うこと。
-**リリースビルド**には今は入っていない。リリースビルドでは、端末の上で許可したとき (設定と、画面に出る
-短いコード) だけ開く形にする計画で、そうなれば同じ put と launch の手順がリリースビルドでも使える。
-入ったらこの文書を直す。
+**開発用ビルド**のリモート操作には認証が無く、同じネットワークの誰でも使える。信頼できるネットワークでだけ
+使うこと。開発用ビルドでは下の手順は要らない。
+
+#### リリースビルドでは: PC を一度登録する
+
+**リリースビルド**は、端末の上で許可した PC にだけ答える。端末ごとに一度だけ次を行う:
+
+1. 端末で Config を開き、**システム**タブの**遠隔操作**の行を左右の矢印キーで進める。値は
+   `オフ` → `オン` → `PCを登録 123456` → `登録取消 N PC` → `オフ` と巡る。最初は `オフ`。`オン` はすぐ効き、
+   再起動しても残る。この行は WiFi が上がっているときだけ出る。
+2. 6 桁の番号が付いた `PCを登録` まで進める。新しい PC を受け付けるのは、行がこの番号を出している間だけ
+   (行を離れるか Config を閉じると止まる)。
+3. PC からその番号を送り、答えのトークンを控える:
+
+   ```
+   curl -X POST "http://<device-ip>/pair?code=<番号>"
+   # {"ok":true,"token":"<token>"}
+   ```
+
+   番号は PC が 1 台登録するたびに替わる。端末が覚える PC は 4 台までで、5 台目を登録すると最も古いものが
+   消える。
+4. **すべての**リクエストにトークンを `X-Fmrb-Token` ヘッダで付ける:
+
+   ```
+   TOKEN=<token>
+   curl -H "X-Fmrb-Token: $TOKEN" "http://<device-ip>/auth"     # 200 なら通る
+   curl -H "X-Fmrb-Token: $TOKEN" -T hello.app.wasm "http://<device-ip>/fs/put?path=/app/mine/hello.app.wasm"
+   curl -H "X-Fmrb-Token: $TOKEN" -X POST "http://<device-ip>/app/launch?path=/app/mine/hello.app.wasm"
+   ```
+
+トークンは再起動の後も使える。登録済みの PC は、行が `オン` になっていれば通る。`オフ` にするとリモート操作は
+すぐ閉じる (開いている接続も切れる)。登録した PC をすべて取り消すには、行を `登録取消 N PC` まで進めて Save を
+押す。その後は登録し直す。上の Ruby の道具でも同じことができ、`ruby tools/fmrb_rd_fs.rb <device-ip> pair <番号>`
+を一度実行すれば、以降はトークンを自動で付けて送る。
+
+リリースビルドで書き込み (`/fs/put`・`/fs/mkdir`・`/fs/del`) ができるのは `/home`・`/app`・`/mnt/sd` の下だけ。
+`/app/mine/...` はそのまま使える。
+
+答えの JSON の `guard` に理由が入る (`{"ok":false,"guard":"closed",...}`)。
+
+| 答え | 意味 | すること |
+|---|---|---|
+| 401 `closed` | 遠隔操作が `オフ` | 端末で `オン` にする |
+| 401 `no_token` / `bad_token` | トークンが無いか、端末の知らないトークン (取り消された・押し出された) | この PC を登録する |
+| 403 `closed` (`/pair` の答え) | 遠隔操作が `オフ` | `オン` にしてから `PCを登録` へ進める |
+| 403 `not_pairing` | 行が番号付きの `PCを登録` になっていない | 行を `PCを登録` まで進める |
+| 403 `wrong` | 番号が違う (答えに残りの回数が入る) | 画面の番号を確認する |
+| 403 `locked` | 番号違いが 5 回になった | 行をいったん離れて戻る (または Config を開き直す)。新しい番号が出る |
+| 書き込みで 403 | `/home`・`/app`・`/mnt/sd` の外を指している | アプリは `/app` の下に置く |
 
 ボードのログはシリアルに出る (fmruby-core の `rake monitor` か、任意のシリアルモニタ)。WiFi には流れない。
 
