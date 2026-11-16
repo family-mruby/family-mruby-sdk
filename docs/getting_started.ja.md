@@ -105,11 +105,11 @@ tinygo build -target=fmrb.json -o hello.app.wasm .
 
 | パッケージ | 中身 |
 |---|---|
-| `github.com/family-mruby/family-mruby-sdk/tinygo/fmrb` | フック、`Window`、`App`、音、ファイル、ログ |
+| `github.com/family-mruby/family-mruby-sdk/tinygo/fmrb` | フック、`Window` (描画・スプライト・タイル)、`App` (クリップボード・統計も)、音 (音符・FMSQ の曲・WAV)、ファイル、ログ |
 | `github.com/family-mruby/family-mruby-sdk/tinygo/fmrb/raw` | 境界のすべての関数・レコード・選択肢 (生成物) |
 
 SDK のリポジトリ (<https://github.com/family-mruby/family-mruby-sdk>) には言語ごとのサンプル
-(`<言語>/examples/`) もあり、主な機能を 5 ページで見せる `tour` もそこにある。アプリを書くのにリポジトリの
+(`<言語>/examples/`) もあり、主な機能を 11 ページで見せる `tour` もそこにある。アプリを書くのにリポジトリの
 checkout は要らない。
 
 ## 4. アプリの形
@@ -173,8 +173,9 @@ func main() {}
 
 `main` は空のままにする。フックを呼ぶのはファームウェアで、アプリ側にループは無い。
 
-SDK の `tinygo/examples/tour` はもう一歩進んだサンプルで、図形・日本語の文字・画像・音・ファイル・時計・アプリの
-情報を 5 ページで見せる。SDK のどの言語でも同じアプリ (C は `c/examples/tour/app.c`。仕様は `docs/tour.md`) なので、
+SDK の `tinygo/examples/tour` はもう一歩進んだサンプルで、図形・日本語の文字・画像・スプライト・タイル・音・
+FMSQ の曲と WAV の声・ファイル・ポインタで描く線・打ったキー・時計・クリップボード・アプリの情報と wasm の数値を
+11 ページで見せる。SDK のどの言語でも同じアプリ (C は `c/examples/tour/app.c`。仕様は `docs/tour.md`) なので、
 言語ごとの書き方を比べる場所にもなる。`fmrb` パッケージがラップしていないものは `fmrb/raw` にある (生成物。境界の
 関数 1 つに Go の関数 1 つ。例 `raw.GfxFillArc`)。
 

@@ -121,12 +121,12 @@ What the module has:
 
 | Package | What it is |
 |---|---|
-| `github.com/family-mruby/family-mruby-sdk/tinygo/fmrb` | the hooks, `Window`, `App`, sound, files, log |
+| `github.com/family-mruby/family-mruby-sdk/tinygo/fmrb` | the hooks, `Window` (drawing, sprites, tiles), `App` (with the clipboard and stats), sound (notes, FMSQ tunes, WAV), files, log |
 | `github.com/family-mruby/family-mruby-sdk/tinygo/fmrb/raw` | every boundary function, record and choice (generated) |
 
 The SDK's repository (<https://github.com/family-mruby/family-mruby-sdk>)
 also has samples for every language (`<language>/examples/`), among them
-`tour`, which goes through the main functions in five pages; you do not need
+`tour`, which goes through the main functions in eleven pages; you do not need
 a checkout of it to write an app.
 
 ## 4. The shape of an app
@@ -191,8 +191,10 @@ func main() {}
 
 `main` stays empty: the firmware calls the hooks, there is no loop of yours.
 
-The SDK's `tinygo/examples/tour` goes further: shapes, Japanese text, a picture, sound,
-files, clocks and the app's information over five pages. It is the same app
+The SDK's `tinygo/examples/tour` goes further: shapes, Japanese text, a picture,
+sprites, tiles, sound, an FMSQ tune and a WAV voice, files, drawing with the
+pointer, typed keys, clocks, the clipboard and the app's information and wasm
+numbers over eleven pages. It is the same app
 in every SDK language (`c/examples/tour/app.c` for C; the specification is
 `docs/tour.md`), so it is also the place to see how a language writes each
 thing. What the `fmrb` package does not wrap is in `fmrb/raw` (generated, one

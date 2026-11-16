@@ -70,19 +70,21 @@ of an app, the hooks and the troubleshooting table are in the guide.
 
 ## Samples
 
-Every language has `tour`: hello plus a tour of the main functions (shapes,
-text and Japanese text, a picture, sound, files, the log, clocks, the app's
-information, key and pointer input) with the same content and screen in
-each language, so they can be compared. Every language also has `hello`
+Every language has `tour`: hello plus a tour of the main functions over
+eleven pages (shapes, text and Japanese text, a picture, sprites, tiles,
+sound, an FMSQ tune and a WAV voice, files, pointer drawing and typed keys,
+the app's information and clocks, the clipboard and the app's own wasm
+numbers) with the same content and screen in each language, down to the
+pixel, so they can be compared. Every language also has `hello`
 (the smallest app, the one the guide builds), and TinyGo `bounce` (a small
 animation).
 
 | tour | Size of the .wasm (SDK 0.1.0) |
 |---|---|
-| TinyGo | 16,972 B |
-| Rust | 11,036 B |
-| Zig | 10,655 B |
-| C | 9,159 B |
+| TinyGo | 29,434 B |
+| Rust | 25,509 B |
+| Zig | 24,267 B |
+| C | 19,226 B |
 
 In a checkout of this repository the samples are built by the scripts the
 SDK's maintainers use (Ruby 3.x; output in `<language>/build/`, or `-o
