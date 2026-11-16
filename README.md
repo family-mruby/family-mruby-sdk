@@ -16,7 +16,7 @@ names and shapes may still change.
 
 | Language | You get the SDK with | You build with | Samples |
 |---|---|---|---|
-| TinyGo | `go get github.com/family-mruby/family-mruby-sdk/tinygo` | `tinygo build -target=fmrb.json` | `hello`, `tour`, `bounce` |
+| TinyGo | `go get github.com/family-mruby/family-mruby-sdk/tinygo` | `tinygo build -target=fmrb.json` | `hello`, `tour` |
 | Rust | `cargo add --git https://github.com/family-mruby/family-mruby-sdk family-mruby-sdk` | `cargo build --release` | `hello`, `tour` |
 | Zig | `zig fetch --save git+https://github.com/family-mruby/family-mruby-sdk` | `zig build` (the SDK's `addApp`) | `hello`, `tour` |
 | C | the headers of `c/` (copied, or a git submodule) | `zig cc` or clang, one line (or a small Makefile) | `hello`, `tour` |
@@ -76,8 +76,7 @@ sound with an FMSQ tune and a WAV voice, files, pointer drawing and typed keys,
 the app's information and clocks, the clipboard and the app's own wasm
 numbers) with the same content and screen in each language, down to the
 pixel, so they can be compared. Every language also has `hello`
-(the smallest app, the one the guide builds), and TinyGo `bounce` (a small
-animation).
+(the smallest app, the one the guide builds).
 
 | tour | Size of the .wasm (SDK 0.1.0) |
 |---|---|

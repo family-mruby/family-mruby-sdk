@@ -35,7 +35,7 @@ WebAssembly (`.app.wasm`) にコンパイルし、端末ではファームウェ
 | ESP32-P4 のボード (Modern。M5Stack Tab5 など) | 動く |
 | Linux の sim (docker) | 動く |
 | ESP32-S3 (Retro) | 動かない。起動は `wasm apps are not in this build` で断られる |
-| ネイティブ版 (Linux の 1 プロセス)、ブラウザ版 | 動く (公開中のブラウザ版には `TinyGo bounce` と `TinyGo hello` が入っている。7 章の c) |
+| ネイティブ版 (Linux の 1 プロセス)、ブラウザ版 | 動く (公開中のブラウザ版には C・TinyGo・Rust・Zig の tour が入っている。7 章の c) |
 
 ## 2. 用意するもの
 
@@ -239,7 +239,7 @@ audio.NoteOff(0)
 ```
 
 音は `NoteOff` を呼ぶまで鳴り続ける。短い音なら数回後の `OnUpdate` で自分で止め、`OnDestroy` でも止める。
-`tinygo/examples/bounce` が両方を行っている。
+tour の音のページ (`tinygo/examples/tour`) が両方を行っている。
 
 ### ファイル
 
@@ -297,7 +297,7 @@ default_window_pos_y = 50
 
 - **カテゴリは `/app` の下のディレクトリで決まる** (`/app/tinygo/`・`/app/mine/` など。どのディレクトリでも
   よい)。ランチャーは全カテゴリのアプリを名前順に並べて出す (端末の設定でカテゴリごと隠すこともできる)。
-- エンジンは拡張子 (`.wasm`) で決まる。`bounce.app.toml` にある `language = "tinygo"` は人向けのメモで、
+- エンジンは拡張子 (`.wasm`) で決まる。`tour.app.toml` にある `language = "tinygo"` は人向けのメモで、
   ファームウェアは読まない。
 - SDK のバージョンを書くキーは無い。SDK が `.wasm` に入れる (8 章の「SDK のバージョン」)。
 - ファームウェアは SDK の言語ごとのアイコンを持っている。`icon = "usr/share/icon/c.icon"` (`tinygo.icon`・
@@ -580,7 +580,7 @@ ruby tools/fmrb_rd_launch.rb <device-ip> /app/mine/hello.app.wasm
 ### (c) ブラウザで動かす
 
 公開中のブラウザ版 <https://family-mruby.github.io/studio/> でも wasm のアプリが動く (同じ WAMR をページに
-組み込んである)。何もインストールしなくてよい。ランチャーには `TinyGo bounce` と `TinyGo hello` が入っている。
+組み込んである)。何もインストールしなくてよい。ランチャーには各言語の tour (`C tour`・`TinyGo tour`・`Rust tour`・`Zig tour`) が入っている。
 自分のアプリを動かすには:
 
 1. アプリの 2 つのファイルを、アプリの名前のフォルダに入れる: `hello/hello.app.wasm` と `hello/hello.app.toml`

@@ -13,7 +13,7 @@ Window の中に描く。
 
 | 言語 | SDK の取り込み | ビルド | サンプル |
 |---|---|---|---|
-| TinyGo | `go get github.com/family-mruby/family-mruby-sdk/tinygo` | `tinygo build -target=fmrb.json` | `hello`・`tour`・`bounce` |
+| TinyGo | `go get github.com/family-mruby/family-mruby-sdk/tinygo` | `tinygo build -target=fmrb.json` | `hello`・`tour` |
 | Rust | `cargo add --git https://github.com/family-mruby/family-mruby-sdk family-mruby-sdk` | `cargo build --release` | `hello`・`tour` |
 | Zig | `zig fetch --save git+https://github.com/family-mruby/family-mruby-sdk` | `zig build` (SDK の `addApp`) | `hello`・`tour` |
 | C | `c/` のヘッダ (コピーか git の submodule) | `zig cc` か clang の 1 行 (か小さな Makefile) | `hello`・`tour` |
@@ -64,8 +64,7 @@ wasm のアプリは ESP32-S3 のボード (Retro) では動かない。詳し�
 
 どの言語にも `tour` がある。hello に主な機能を 10 ページで一通り足したもの (図形、文字と日本語、画像、
 スプライト、タイル、音と FMSQ の曲と WAV の声、ファイル、ポインタで描く線と打ったキー、アプリの情報と時計、
-クリップボードとアプリ自身の wasm の数値) で、どの言語でも内容と画面がドット単位で同じなので書き方を比べられる。どの言語にも `hello` (入門ガイドで作るいちばん小さいアプリ) があり、TinyGo には `bounce`
-(小さなアニメーション) もある。
+クリップボードとアプリ自身の wasm の数値) で、どの言語でも内容と画面がドット単位で同じなので書き方を比べられる。どの言語にも `hello` (入門ガイドで作るいちばん小さいアプリ) もある。
 
 | tour | .wasm のサイズ (SDK 0.1.0) |
 |---|---|

@@ -5,8 +5,8 @@
 # (for the SDK's maintainers and its examples; an app of your own is built
 # with `tinygo build -target=fmrb.json`, docs/getting_started.md).
 #
-#   ruby tinygo/build.rb bounce                      # -> tinygo/build/bounce.app.wasm
-#   ruby tinygo/build.rb bounce -o <dir or file>     # e.g. fmruby-core/flash/app/tinygo
+#   ruby tinygo/build.rb tour                        # -> tinygo/build/tour.app.wasm
+#   ruby tinygo/build.rb tour -o <dir or file>       # e.g. fmruby-core/flash/app/tinygo
 #
 # The toolchain: TINYGO (default ~/toolchains/tinygo/bin/tinygo when it is
 # there, else tinygo on PATH) and its Go (~/toolchains/go/bin, put first on

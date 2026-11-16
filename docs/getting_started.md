@@ -44,7 +44,7 @@ Where wasm apps run today:
 | ESP32-P4 boards (Modern, e.g. M5Stack Tab5) | yes |
 | Linux simulation (the docker sim) | yes |
 | ESP32-S3 (Retro) | no: the launch is refused with `wasm apps are not in this build` |
-| Native Linux build, browser build | yes (the public browser build has `TinyGo bounce` and `TinyGo hello`; see 7 c) |
+| Native Linux build, browser build | yes (the public browser build has the tour in C, TinyGo, Rust and Zig; see 7 c) |
 
 ## 2. Prerequisites
 
@@ -268,7 +268,7 @@ audio.NoteOff(0)
 ```
 
 A note sounds until `NoteOff`; turn it off yourself (after a few `OnUpdate`
-calls for a short beep) and in `OnDestroy`. `tinygo/examples/bounce` does both.
+calls for a short beep) and in `OnDestroy`. The tour's sound page (`tinygo/examples/tour`) does both.
 
 ### Files
 
@@ -330,7 +330,7 @@ The keys the firmware reads (fmruby-core's app spawner and launcher):
   categories together, sorted by name (a device's settings can hide whole
   categories).
 - The engine is chosen by the extension (`.wasm`). The `language = "tinygo"`
-  line in `bounce.app.toml` is a note for people; the firmware does not read it.
+  line in `tour.app.toml` is a note for people; the firmware does not read it.
 - There is no key for the SDK version: the SDK puts it into the `.wasm`
   (section 8, "The SDK version").
 - The firmware carries an icon per SDK language: `icon =
@@ -649,8 +649,8 @@ serial monitor); it is not sent over WiFi.
 
 The public browser build, <https://family-mruby.github.io/studio/>, runs
 wasm apps too (the same WAMR, built into the page), and needs nothing
-installed. It already has `TinyGo bounce` and `TinyGo hello` in its
-launcher. To run your own app there:
+installed. It already has the tour in each language (`C tour`,
+`TinyGo tour`, `Rust tour`, `Zig tour`) in its launcher. To run your own app there:
 
 1. Put the app's two files in a folder of their own, named after the app:
    `hello/hello.app.wasm` and `hello/hello.app.toml` (the project directory

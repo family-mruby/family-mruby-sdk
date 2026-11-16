@@ -11,9 +11,8 @@ the first, the references; the C one uses the SDK's helper header
 (`flash/app/python/python.app.py`), limited to what the boundary offers to
 every language.
 
-`hello` (TinyGo, Rust, Zig) stays the smallest getting-started app, and
-TinyGo keeps `bounce` as a small animation demo; neither is part of this
-specification.
+`hello` stays the smallest getting-started app in every language; it is not
+part of this specification.
 
 ## Window and colors
 
