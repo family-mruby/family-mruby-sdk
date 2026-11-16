@@ -321,7 +321,8 @@ The keys the firmware reads (fmruby-core's app spawner and launcher):
 | `single_instance` | `true`: refuse a second copy of this app | false |
 | `exclusive_group` | a name: refuse the launch while another app of the group runs | none |
 | `large_memory` | 1: take a large memory pool | 0 |
-| `task_stack_kb` | the app task's C stack in KB (wasm apps get 24 KB by default) | |
+| `task_stack_kb` | the app task's C stack in KB, 16 to 64 | 16 |
+| `wasm_memory_pages` | the most the linear memory may grow to, in 64 KB pages: 1 up to what the app's memory pool has room for (14 on the P4). A value out of range is refused with the reason | 4 |
 | `icon` | the launcher icon, a path without the leading `/` (e.g. `"app/mine/hello.icon"`) | the wasm icon (`usr/share/icon/wasm.icon`) |
 | `launcher_visible` | `false`: run by path only, not listed in the launcher | listed |
 
@@ -679,13 +680,16 @@ reason (section 8).
 | What you see | Why, and what to do |
 |---|---|
 | An **error window** (`Error: <name>`, click to close) in place of the app | the app was refused at load, or a hook trapped or ran too long. The window and the log (`wasm: [<name>] <hook> stopped: <reason>`) give the reason. The app is not called again |
-| `on_update: Exception: instruction limit exceeded` | one hook call may run 20,000,000 instructions. Split long work over several `OnUpdate` calls |
+| `on_update: Exception: instruction limit exceeded` | one hook call may run 5,000,000 instructions (about 0.9 s on the ESP32-P4). Split long work over several `OnUpdate` calls |
 | `... Exception: unreachable` or another trap | usually a Go panic (index out of range, nil, out of memory). Look at what that hook does; `LogInfo` lines help narrow it down |
 | `No on_create, on_update or on_event in ...` | the app exports none of the three, so it is refused at load. A TinyGo app built with the `fmrb` package always exports them; this is for C and other languages |
 | `wasm: [<name>] <hook> takes N and returns M values, expected ...` | a hook has the wrong shape (an app built against an older SDK). Rebuild with the current SDK |
 | `on_event needs fmrb_event_buffer (the SDK's event buffer) or a stack pointer global (__stack_pointer) for its record` | the app was built with an older SDK and has nowhere for the firmware to put the event record (a very small app whose optimiser dropped the stack pointer). Rebuild it with the current SDK: the `fmrb` package exports `fmrb_event_buffer`, the place the firmware writes the record into (a C app puts `FMRB_EVENT_BUFFER();` in one of its files) |
 | `imports fmrb.<name>, which this firmware does not have ...: the app was built with SDK X.Y.Z, newer than this firmware; update the firmware` | the app uses a function the firmware does not have (an SDK newer than the firmware). Update the firmware, or build the app with the SDK that matches it. `in another shape than this firmware's` is the same for a function whose parameters changed. `built with a newer SDK` in place of a version: the `.wasm` does not carry one (see "The SDK version") |
 | `imports <module>.<name>, but the firmware gives only "fmrb" functions` | the app imports WASI or libc functions (for example `printf` in C). Build without them |
+| `... does not fit the shared wasm pool: N KB of 256 KB free (the module is N bytes with N functions ...)` | the wasm runtime keeps the modules of all running wasm apps in one pool of 256 KB. What a module takes of it grows with its number of functions (about 120 bytes each on the ESP32-P4), not its size in bytes. With `other wasm apps hold the rest`, close one of them; otherwise the module is too large: make it smaller (fewer functions, `-Os`, no unused libraries) |
+| `starts with N pages of memory, more than its limit of M` | the module's memory starts larger than the limit (4 pages by default). Raise `wasm_memory_pages` in the `.app.toml`, or build it to start smaller (see the stack size in the build settings) |
+| `wasm_memory_pages ... must be a whole number from 1 to N` / `... is more than this machine's app frame has room for` | the `.app.toml`'s `wasm_memory_pages` is out of range for this device |
 | `... did not load: ...` / `... did not start: ...` | WAMR refused the module (not wasm, a feature WAMR does not have, no memory) |
 | `wasm apps are not in this build` | the device has no WAMR (ESP32-S3, or a native or browser build made before wasm apps came to them) |
 | The app does not appear in the launcher | the launcher's list is from the last scan: reload it (the Reload button in its title bar, or F5). Or start it by path |
@@ -717,10 +721,12 @@ imports).
 
 **Memory.** The app's linear memory comes in 64 KB pages. A TinyGo app
 starts with 2 pages and grows as it allocates, up to the `up to N` of the
-`loaded` line: what is free in the app's memory pool less 64 KB. A large
-`FileRead` or big slices count against it. If the app runs out, the Go
-runtime panics (a trap, as above); `large_memory = 1` in the `.app.toml` gives
-it a larger pool where the device has one.
+`loaded` line: 4 pages (256 KB) on every device, unless the `.app.toml`
+sets `wasm_memory_pages`. That may go up to what is free in the app's
+memory pool less 64 KB (14 pages on the ESP32-P4); `large_memory = 1` gives
+the app a larger pool where the device has one. A large `FileRead` or big
+slices count against it. If the app runs out, the Go runtime panics (a
+trap, as above).
 
 ## 9. Limits today
 

@@ -70,7 +70,9 @@ the example's `.app.toml` next to the `.wasm` when there is none there.
   a 16 KB stack. `c/examples/hello/Makefile` is the Makefile example.
 - Rust: `cargo build --release -p <name>` in `rust/` with the settings of
   `rust/.cargo/config.toml` (the target, the release profile and a 16 KB
-  stack; without the stack size the module starts at 17 pages). `no_std`,
+  stack; without the stack size the module starts at 17 pages, and the
+  firmware refuses it: its memory limit is 4 pages unless the `.app.toml`
+  sets `wasm_memory_pages`). `no_std`,
   no allocator, no dependencies.
 - Zig: `zig build -Dexample=<name>` at the root with the newest
   `~/toolchains/zig-*` (override with `ZIG`; 0.15 or later): the settings of

@@ -60,7 +60,8 @@ custom section にし、wasm-ld は `--strip-all` でも残す):
 - C: `~/toolchains/zig-*` の `zig cc -target wasm32-freestanding` (`ZIG` で変えられる。`CC=clang` なら clang と
   wasm-ld)。libc なし、エントリポイントなし、スタック 16 KB。Makefile の例は `c/examples/hello/Makefile`。
 - Rust: `rust/` で `cargo build --release -p <名前>`。設定は `rust/.cargo/config.toml` (ターゲット、release の
-  profile、スタック 16 KB。スタックの指定が無いとメモリが 17 ページから始まる)。`no_std`、アロケータなし、依存なし。
+  profile、スタック 16 KB。スタックの指定が無いとメモリが 17 ページから始まり、`.app.toml` の
+  `wasm_memory_pages` が無ければメモリの上限 4 ページを超えるのでファームウェアが断る)。`no_std`、アロケータなし、依存なし。
 - Zig: 最新の `~/toolchains/zig-*` (`ZIG` で変えられる。0.15 以降) で、ルートで `zig build -Dexample=<名前>`。
   設定は `build.zig` の `addAppModule`。
 

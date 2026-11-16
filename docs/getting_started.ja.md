@@ -291,7 +291,8 @@ default_window_pos_y = 50
 | `single_instance` | `true`: 同じアプリの 2 つ目の起動を断る | false |
 | `exclusive_group` | 名前: 同じグループのアプリが動いている間は起動を断る | なし |
 | `large_memory` | 1: 大きいメモリプールを使う | 0 |
-| `task_stack_kb` | アプリのタスクの C スタック (KB)。wasm のアプリの既定は 24 KB | |
+| `task_stack_kb` | アプリのタスクの C スタック (KB)。16〜64 | 16 |
+| `wasm_memory_pages` | リニアメモリが増えてよい最大 (64 KB のページ数)。1 からアプリのメモリプールの空き (ESP32-P4 で 14) まで。範囲外の値は理由つきで断られる | 4 |
 | `icon` | ランチャーのアイコン。先頭の `/` なしのパス (例 `"app/mine/hello.icon"`) | wasm のアイコン (`usr/share/icon/wasm.icon`) |
 | `launcher_visible` | `false`: ランチャーに出さず、パス指定の起動だけにする | 出す |
 
@@ -602,13 +603,16 @@ ruby tools/fmrb_rd_launch.rb <device-ip> /app/mine/hello.app.wasm
 | 症状 | 原因と対処 |
 |---|---|
 | アプリの代わりに**エラーの Window** (`Error: <名前>`、クリックで閉じる) が出る | 読み込みの時点で断られたか、フックがトラップしたか、長く走りすぎた。理由は Window とログ (`wasm: [<名前>] <フック> stopped: <理由>`) に出る。そのアプリのフックはもう呼ばれない |
-| `on_update: Exception: instruction limit exceeded` | 1 回のフックの呼び出しで実行できるのは 2,000 万命令まで。長い処理は複数回の `OnUpdate` に分ける |
+| `on_update: Exception: instruction limit exceeded` | 1 回のフックの呼び出しで実行できるのは 500 万命令まで (ESP32-P4 で約 0.9 秒)。長い処理は複数回の `OnUpdate` に分ける |
 | `... Exception: unreachable` などのトラップ | たいていは Go の panic (範囲外の添字、nil、メモリ不足)。そのフックの処理を見直す。`LogInfo` を挟むと場所を絞れる |
 | `No on_create, on_update or on_event in ...` | 3 つのどれも export していないので、読み込みの時点で断られた。`fmrb` パッケージでビルドした TinyGo のアプリは必ず export するので、C などほかの言語向けの話 |
 | `wasm: [<名前>] <フック> takes N and returns M values, expected ...` | フックのシグネチャが違う (古い SDK でビルドしたアプリ)。今の SDK でビルドし直す |
 | `on_event needs fmrb_event_buffer (the SDK's event buffer) or a stack pointer global (__stack_pointer) for its record` | 古い SDK でビルドしたアプリで、ファームウェアがイベントのレコードを置く場所が無い (最適化でスタックポインタが消えた小さいアプリ)。今の SDK でビルドし直す。`fmrb` パッケージは、ファームウェアがレコードを書き込む置き場 `fmrb_event_buffer` を export する (C のアプリはどれか 1 つのファイルに `FMRB_EVENT_BUFFER();` と書く) |
 | `imports fmrb.<名前>, which this firmware does not have ...: the app was built with SDK X.Y.Z, newer than this firmware; update the firmware` | ファームウェアに無い関数をアプリが使っている (SDK がファームウェアより新しい)。ファームウェアを更新するか、ファームウェアに合うバージョンの SDK でビルドする。`in another shape than this firmware's` は、シグネチャの変わった関数について同じこと。バージョンの代わりに `built with a newer SDK` と出るのは、`.wasm` がバージョンを持っていないとき (「SDK のバージョン」を参照) |
 | `imports <モジュール>.<名前>, but the firmware gives only "fmrb" functions` | WASI や libc の関数を import している (C の `printf` など)。使わずにビルドする |
+| `... does not fit the shared wasm pool: N KB of 256 KB free (the module is N bytes with N functions ...)` | wasm のランタイムは、動いている wasm のアプリ全部のモジュールを 256 KB の 1 つのプールに置く。モジュールが使う量はバイト数ではなく関数の数で増える (ESP32-P4 で 1 つ約 120 バイト)。`other wasm apps hold the rest` と出たら、ほかの wasm のアプリを閉じる。出ていなければモジュールが大きすぎるので、小さくする (関数を減らす、`-Os`、使わないライブラリを外す) |
+| `starts with N pages of memory, more than its limit of M` | モジュールのメモリの初期サイズが上限 (既定 4 ページ) より大きい。`.app.toml` の `wasm_memory_pages` を上げるか、小さく始まるようにビルドする (ビルドの設定のスタックサイズを参照) |
+| `wasm_memory_pages ... must be a whole number from 1 to N` / `... is more than this machine's app frame has room for` | `.app.toml` の `wasm_memory_pages` がその端末の範囲を外れている |
 | `... did not load: ...` / `... did not start: ...` | WAMR がモジュールを受け付けなかった (wasm でない、WAMR に無い機能、メモリ不足) |
 | `wasm apps are not in this build` | その端末には WAMR が入っていない (ESP32-S3、または wasm のアプリに対応する前のネイティブ版・ブラウザ版) |
 | ランチャーにアプリが出ない | ランチャーの一覧は前回のスキャンの結果。読み直す (タイトルバーの Reload ボタン、または F5)。パスを指定して起動してもよい |
@@ -634,9 +638,10 @@ Rust の `app!` マクロ、Zig のモジュールは自動で入れ、C のア�
 `ruby tools/check_bindings.rb hello.app.wasm` (import のチェックもする) で見られる。
 
 **メモリ。** アプリのリニアメモリは 64 KB のページ単位。TinyGo のアプリは 2 ページで始まり、確保に応じて
-増える。上限は `loaded` の行の `up to N` で、アプリのメモリプールの空きから 64 KB を引いた分。大きい
-`FileRead` や大きなスライスもここから取る。足りなくなると Go のランタイムが panic する (上のトラップに
-なる)。`.app.toml` に `large_memory = 1` を書くと、端末にあれば大きいプールを使う。
+増える。上限は `loaded` の行の `up to N` で、どの端末でも 4 ページ (256 KB)。`.app.toml` の `wasm_memory_pages`
+で変えられ、アプリのメモリプールの空きから 64 KB を引いた分 (ESP32-P4 で 14 ページ) まで上げられる。
+`large_memory = 1` を書くと、端末にあれば大きいプールを使う。大きい `FileRead` や大きなスライスもここから
+取る。足りなくなると Go のランタイムが panic する (上のトラップになる)。
 
 ## 9. 今の制約
 
